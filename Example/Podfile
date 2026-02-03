@@ -1,0 +1,11 @@
+use_frameworks!
+
+platform :ios, '16.0'
+
+target 'MSGImagePicker_Example' do
+  pod 'MSGImagePicker', :path => '../'
+end
+
+target 'MSGImagePicker_Tests' do
+  pod 'MSGImagePicker', :path => '../'
+end
