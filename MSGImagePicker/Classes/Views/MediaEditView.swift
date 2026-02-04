@@ -97,6 +97,12 @@ public struct MediaEditView: View {
             // Top bar
             topBar
             
+            // Video trim controls (only for videos) - positioned below top bar
+            if viewModel.currentMediaIsVideo, let currentMedia = viewModel.currentMedia {
+                videoTrimSection(for: currentMedia)
+                    .padding(.top, 8)
+            }
+            
             Spacer()
             
             // Bottom controls
@@ -261,6 +267,31 @@ public struct MediaEditView: View {
             )
             .ignoresSafeArea(edges: .bottom)
         )
+    }
+    
+    // MARK: - Video Trim Section
+    
+    @ViewBuilder
+    private func videoTrimSection(for media: PickedMedia) -> some View {
+        VStack(spacing: 8) {
+            // Frame strip with trim handles
+            VideoTrimControlsView(
+                asset: media.asset,
+                duration: media.videoDuration,
+                trimStart: viewModel.currentTrimStartBinding,
+                trimEnd: viewModel.currentTrimEndBinding
+            )
+            .padding(.horizontal)
+            
+            // Info bar (mute + duration/size)
+            VideoTrimInfoBar(
+                asset: media.asset,
+                trimStart: viewModel.currentTrimStart,
+                trimEnd: viewModel.currentTrimEnd,
+                isMuted: viewModel.currentIsAudioMutedBinding
+            )
+            .padding(.horizontal)
+        }
     }
     
     private var captionField: some View {

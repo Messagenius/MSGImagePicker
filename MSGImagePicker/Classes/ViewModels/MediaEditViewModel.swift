@@ -83,6 +83,76 @@ final class MediaEditViewModel: ObservableObject {
         )
     }
     
+    // MARK: - Video Trim Management
+    
+    /// Whether the current media is a video.
+    var currentMediaIsVideo: Bool {
+        currentMedia?.isVideo ?? false
+    }
+    
+    /// The duration of the current video in seconds. Returns 0 for images.
+    var currentVideoDuration: TimeInterval {
+        currentMedia?.videoDuration ?? 0
+    }
+    
+    /// Gets the trim start time for the current video.
+    var currentTrimStart: TimeInterval {
+        get {
+            currentMedia?.effectiveTrimStart ?? 0
+        }
+        set {
+            guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
+            mediaItems[currentIndex].trimStart = newValue > 0 ? newValue : nil
+        }
+    }
+    
+    /// Gets the trim end time for the current video.
+    var currentTrimEnd: TimeInterval {
+        get {
+            currentMedia?.effectiveTrimEnd ?? currentVideoDuration
+        }
+        set {
+            guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
+            let duration = currentVideoDuration
+            mediaItems[currentIndex].trimEnd = newValue < duration ? newValue : nil
+        }
+    }
+    
+    /// Binding for the current video's trim start time.
+    var currentTrimStartBinding: Binding<TimeInterval> {
+        Binding(
+            get: { self.currentTrimStart },
+            set: { self.currentTrimStart = $0 }
+        )
+    }
+    
+    /// Binding for the current video's trim end time.
+    var currentTrimEndBinding: Binding<TimeInterval> {
+        Binding(
+            get: { self.currentTrimEnd },
+            set: { self.currentTrimEnd = $0 }
+        )
+    }
+    
+    /// Whether the current video's audio is muted.
+    var currentIsAudioMuted: Bool {
+        get {
+            currentMedia?.isAudioMuted ?? false
+        }
+        set {
+            guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
+            mediaItems[currentIndex].isAudioMuted = newValue
+        }
+    }
+    
+    /// Binding for the current video's mute state.
+    var currentIsAudioMutedBinding: Binding<Bool> {
+        Binding(
+            get: { self.currentIsAudioMuted },
+            set: { self.currentIsAudioMuted = $0 }
+        )
+    }
+    
     // MARK: - Media Management
     
     /// Selects the media at the given index.
@@ -122,11 +192,14 @@ final class MediaEditViewModel: ObservableObject {
         // Map new media, preserving edits from existing media
         mediaItems = newMedia.map { newItem in
             if let existing = existingMediaById[newItem.id] {
-                // Preserve existing edits (caption, editedImage, editedVideoURL)
+                // Preserve existing edits (caption, editedImage, editedVideoURL, trim settings)
                 var preserved = newItem
                 preserved.caption = existing.caption
                 preserved.editedImage = existing.editedImage
                 preserved.editedVideoURL = existing.editedVideoURL
+                preserved.trimStart = existing.trimStart
+                preserved.trimEnd = existing.trimEnd
+                preserved.isAudioMuted = existing.isAudioMuted
                 return preserved
             }
             return newItem

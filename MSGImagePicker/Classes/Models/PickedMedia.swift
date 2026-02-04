@@ -25,6 +25,15 @@ public struct PickedMedia: Identifiable, Sendable {
     /// The URL to the edited video file, if the user made modifications. Nil if unedited.
     public var editedVideoURL: URL?
     
+    /// Video trim start time in seconds. Nil means start from beginning.
+    public var trimStart: TimeInterval?
+    
+    /// Video trim end time in seconds. Nil means end at video duration.
+    public var trimEnd: TimeInterval?
+    
+    /// Whether audio is muted for this video.
+    public var isAudioMuted: Bool = false
+    
     /// User-entered caption for this media item.
     public var caption: String
     
@@ -33,7 +42,27 @@ public struct PickedMedia: Identifiable, Sendable {
     
     /// Whether this media has been edited.
     public var isEdited: Bool {
-        editedImage != nil || editedVideoURL != nil
+        editedImage != nil || editedVideoURL != nil || isTrimmed || isAudioMuted
+    }
+    
+    /// Whether the video has been trimmed from its original duration.
+    public var isTrimmed: Bool {
+        trimStart != nil || trimEnd != nil
+    }
+    
+    /// The effective trim start time (0 if not set).
+    public var effectiveTrimStart: TimeInterval {
+        trimStart ?? 0
+    }
+    
+    /// The effective trim end time (video duration if not set).
+    public var effectiveTrimEnd: TimeInterval {
+        trimEnd ?? videoDuration
+    }
+    
+    /// The trimmed video duration in seconds.
+    public var trimmedDuration: TimeInterval {
+        effectiveTrimEnd - effectiveTrimStart
     }
     
     /// Whether this is a video asset.
@@ -64,6 +93,9 @@ public struct PickedMedia: Identifiable, Sendable {
         asset: PHAsset,
         editedImage: UIImage? = nil,
         editedVideoURL: URL? = nil,
+        trimStart: TimeInterval? = nil,
+        trimEnd: TimeInterval? = nil,
+        isAudioMuted: Bool = false,
         caption: String = "",
         selectionOrder: Int
     ) {
@@ -71,6 +103,9 @@ public struct PickedMedia: Identifiable, Sendable {
         self.asset = asset
         self.editedImage = editedImage
         self.editedVideoURL = editedVideoURL
+        self.trimStart = trimStart
+        self.trimEnd = trimEnd
+        self.isAudioMuted = isAudioMuted
         self.caption = caption
         self.selectionOrder = selectionOrder
     }
