@@ -36,6 +36,7 @@ struct MediaGridView: View {
                 }
                 .padding(spacing)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
     }
     

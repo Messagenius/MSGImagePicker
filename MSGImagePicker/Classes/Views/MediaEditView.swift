@@ -26,6 +26,8 @@ public struct MediaEditView: View {
     private let onSend: ([PickedMedia]) -> Void
     
     @State private var showSelectionPicker: Bool = false
+    @State private var scrolledMediaId: String?
+    @FocusState private var isCaptionFocused: Bool
     
     /// Creates a new MediaEditView.
     /// - Parameters:
@@ -55,26 +57,26 @@ public struct MediaEditView: View {
                 Color.black.ignoresSafeArea()
                 
                 if viewModel.hasMedia {
-                    // Main content
+                    // Media viewer - full screen, centered, behind all controls
+                    mediaViewer
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                    
+                    // Overlay controls with transparent backgrounds
                     VStack(spacing: 0) {
-                        // Media viewer takes all available space
-                        mediaViewer
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Top bar
+                        topBar
                         
-                        // Bottom controls (above safe area)
+                        Spacer()
+                        
+                        // Bottom controls
                         bottomControls
                     }
-                    
-                    // Top bar overlay
-                    topBar
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else {
                     // Empty state
                     emptyState
                 }
             }
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
         .fullScreenCover(isPresented: $showSelectionPicker) {
             selectionPicker
         }
@@ -119,15 +121,46 @@ public struct MediaEditView: View {
     
     // MARK: - Media Viewer
     
+    @ViewBuilder
     private var mediaViewer: some View {
-        TabView(selection: $viewModel.currentIndex) {
-            ForEach(Array(viewModel.mediaItems.enumerated()), id: \.element.id) { index, media in
-                MediaViewerItem(media: media, viewModel: viewModel)
-                    .tag(index)
+        GeometryReader { geometry in
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 0) {
+                    ForEach(viewModel.mediaItems) { media in
+                        MediaViewerItem(
+                            media: media,
+                            viewModel: viewModel,
+                            size: geometry.size,
+                            onTap: { isCaptionFocused = false }
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .id(media.id)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollIndicators(.hidden)
+            .scrollPosition(id: $scrolledMediaId)
+            .onChange(of: scrolledMediaId) { _, newValue in
+                if let newId = newValue,
+                   let index = viewModel.mediaItems.firstIndex(where: { $0.id == newId }) {
+                    viewModel.currentIndex = index
+                }
+            }
+            .onChange(of: viewModel.currentIndex) { _, newIndex in
+                let newId = viewModel.mediaItems[safe: newIndex]?.id
+                if scrolledMediaId != newId {
+                    withAnimation {
+                        scrolledMediaId = newId
+                    }
+                }
+            }
+            .onAppear {
+                // Initialize scroll position
+                scrolledMediaId = viewModel.mediaItems[safe: viewModel.currentIndex]?.id
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .animation(.easeInOut, value: viewModel.currentIndex)
     }
     
     // MARK: - Bottom Controls
@@ -149,11 +182,11 @@ public struct MediaEditView: View {
         .padding(.bottom)
         .background(
             LinearGradient(
-                colors: [.clear, .black.opacity(0.8)],
+                colors: [.clear, .black.opacity(0.6)],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: .bottom)
         )
     }
     
@@ -163,6 +196,7 @@ public struct MediaEditView: View {
             text: viewModel.currentCaptionBinding,
             axis: .vertical
         )
+        .focused($isCaptionFocused)
         .textFieldStyle(.plain)
         .lineLimit(1...4)
         .padding(.vertical, 10)
@@ -243,78 +277,36 @@ public struct MediaEditView: View {
 private struct MediaViewerItem: View {
     let media: PickedMedia
     @ObservedObject var viewModel: MediaEditViewModel
+    let size: CGSize
+    let onTap: () -> Void
     
     @State private var image: UIImage?
-    @State private var scale: CGFloat = 1.0
-    @State private var lastScale: CGFloat = 1.0
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
     
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                if let displayImage = media.editedImage ?? image {
-                    Image(uiImage: displayImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .scaleEffect(scale)
-                        .offset(offset)
-                        .gesture(zoomGesture)
-                        .gesture(dragGesture)
-                        .onTapGesture(count: 2) {
-                            withAnimation {
-                                if scale > 1 {
-                                    scale = 1
-                                    offset = .zero
-                                } else {
-                                    scale = 2
-                                }
+        ZStack {
+            if let displayImage = media.editedImage ?? image {
+                Image(uiImage: displayImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .contentShape(.rect)
+                    .zoomable()
+                    .simultaneousGesture(
+                        TapGesture()
+                            .onEnded { _ in
+                                onTap()
                             }
-                        }
-                } else {
-                    ProgressView()
-                        .tint(.white)
-                }
+                    )
+            } else {
+                ProgressView()
+                    .tint(.white)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
         }
+        .frame(width: size.width, height: size.height)
         .onAppear {
             loadImage()
         }
-    }
-    
-    // MARK: - Gestures
-    
-    private var zoomGesture: some Gesture {
-        MagnificationGesture()
-            .onChanged { value in
-                let delta = value / lastScale
-                lastScale = value
-                scale = min(max(scale * delta, 1), 4)
-            }
-            .onEnded { _ in
-                lastScale = 1.0
-                if scale < 1 {
-                    withAnimation {
-                        scale = 1
-                        offset = .zero
-                    }
-                }
-            }
-    }
-    
-    private var dragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                guard scale > 1 else { return }
-                offset = CGSize(
-                    width: lastOffset.width + value.translation.width,
-                    height: lastOffset.height + value.translation.height
-                )
-            }
-            .onEnded { _ in
-                lastOffset = offset
-            }
     }
     
     // MARK: - Image Loading
@@ -327,6 +319,14 @@ private struct MediaViewerItem: View {
                 self.image = loadedImage
             }
         }
+    }
+}
+
+// MARK: - Safe Array Access
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 
