@@ -29,6 +29,12 @@ public struct MediaEditView: View {
     @State private var scrolledMediaId: String?
     @FocusState private var isCaptionFocused: Bool
     
+    /// Image for the crop view (loaded when entering crop mode)
+    @State private var cropImage: UIImage?
+    
+    /// Namespace for matched geometry effect transitions
+    @Namespace private var imageTransitionNamespace
+    
     /// Creates a new MediaEditView.
     /// - Parameters:
     ///   - media: The media items to edit.
@@ -57,28 +63,95 @@ public struct MediaEditView: View {
                 Color.black.ignoresSafeArea()
                 
                 if viewModel.hasMedia {
-                    // Media viewer - full screen, centered, behind all controls
-                    mediaViewer
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                    
-                    // Overlay controls with transparent backgrounds
-                    VStack(spacing: 0) {
-                        // Top bar
-                        topBar
-                        
-                        Spacer()
-                        
-                        // Bottom controls
-                        bottomControls
+                    // Check if in editing mode
+                    if let editingMode = viewModel.editingMode {
+                        editingView(for: editingMode, geometry: geometry)
+                            .transition(.opacity.animation(.easeInOut(duration: 0.25)))
+                    } else {
+                        // Normal media view
+                        normalMediaView(geometry: geometry)
+                            .transition(.opacity.animation(.easeInOut(duration: 0.25)))
                     }
                 } else {
                     // Empty state
                     emptyState
                 }
             }
+            .animation(.easeInOut(duration: 0.25), value: viewModel.editingMode)
         }
         .fullScreenCover(isPresented: $showSelectionPicker) {
             selectionPicker
+        }
+    }
+    
+    // MARK: - Normal Media View
+    
+    @ViewBuilder
+    private func normalMediaView(geometry: GeometryProxy) -> some View {
+        // Media viewer - full screen, centered, behind all controls
+        mediaViewer
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        
+        // Overlay controls with transparent backgrounds
+        VStack(spacing: 0) {
+            // Top bar
+            topBar
+            
+            Spacer()
+            
+            // Bottom controls
+            bottomControls
+        }
+    }
+    
+    // MARK: - Editing View
+    
+    @ViewBuilder
+    private func editingView(for mode: EditingMode, geometry: GeometryProxy) -> some View {
+        switch mode {
+        case .crop:
+            if let image = cropImage {
+                CropView(
+                    image: image,
+                    onCancel: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            viewModel.exitEditingMode()
+                        }
+                        cropImage = nil
+                    },
+                    onDone: { croppedImage in
+                        viewModel.applyEdit(croppedImage)
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            viewModel.exitEditingMode()
+                        }
+                        cropImage = nil
+                    }
+                )
+            } else {
+                // Loading state while image loads
+                ProgressView()
+                    .tint(.white)
+                    .onAppear {
+                        loadCurrentImageForCrop()
+                    }
+            }
+        }
+    }
+    
+    // MARK: - Image Loading for Crop
+    
+    private func loadCurrentImageForCrop() {
+        guard let currentMedia = viewModel.currentMedia else { return }
+        
+        // Use edited image if available, otherwise load original
+        if let editedImage = currentMedia.editedImage {
+            cropImage = editedImage
+        } else {
+            viewModel.loadFullImage(for: currentMedia.asset) { loadedImage in
+                Task { @MainActor in
+                    cropImage = loadedImage
+                }
+            }
         }
     }
     

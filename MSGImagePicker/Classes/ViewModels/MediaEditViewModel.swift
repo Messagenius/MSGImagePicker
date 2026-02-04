@@ -151,6 +151,13 @@ final class MediaEditViewModel: ObservableObject {
         editingMode = nil
     }
     
+    /// Applies an edited image to the current media item.
+    /// - Parameter image: The edited image to apply.
+    func applyEdit(_ image: UIImage) {
+        guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
+        mediaItems[currentIndex].editedImage = image
+    }
+    
     // MARK: - Selection Modification
     
     /// Opens the media selection picker to modify the current selection.
