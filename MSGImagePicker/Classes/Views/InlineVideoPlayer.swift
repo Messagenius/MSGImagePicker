@@ -13,6 +13,8 @@ struct InlineVideoPlayer: View {
     let asset: PHAsset
     let editedVideoURL: URL?
     let isMuted: Bool
+    let trimStart: TimeInterval
+    let trimEnd: TimeInterval
     
     @StateObject private var loader = VideoPlayerLoader()
     
@@ -33,13 +35,31 @@ struct InlineVideoPlayer: View {
             }
         }
         .onAppear {
-            loader.load(asset: asset, editedVideoURL: editedVideoURL, isMuted: isMuted)
+            loader.load(
+                asset: asset,
+                editedVideoURL: editedVideoURL,
+                isMuted: isMuted,
+                trimStart: trimStart,
+                trimEnd: trimEnd
+            )
         }
         .onChange(of: editedVideoURL?.absoluteString) { _, _ in
-            loader.load(asset: asset, editedVideoURL: editedVideoURL, isMuted: isMuted)
+            loader.load(
+                asset: asset,
+                editedVideoURL: editedVideoURL,
+                isMuted: isMuted,
+                trimStart: trimStart,
+                trimEnd: trimEnd
+            )
         }
         .onChange(of: isMuted) { _, newValue in
             loader.setMuted(newValue)
+        }
+        .onChange(of: trimStart) { _, _ in
+            loader.updateTrim(start: trimStart, end: trimEnd)
+        }
+        .onChange(of: trimEnd) { _, _ in
+            loader.updateTrim(start: trimStart, end: trimEnd)
         }
         .onDisappear {
             loader.pause()
@@ -68,12 +88,18 @@ final class VideoPlayerLoader: ObservableObject {
     private var timeControlObservation: NSKeyValueObservation?
     private var endObserver: Any?
     private var lastEditedURL: URL?
+    private var timeObserver: Any?
+    private var trimStart: TimeInterval = 0
+    private var trimEnd: TimeInterval = 0
     
     deinit {
         cleanupObservers()
     }
     
-    func load(asset: PHAsset, editedVideoURL: URL?, isMuted: Bool) {
+    func load(asset: PHAsset, editedVideoURL: URL?, isMuted: Bool, trimStart: TimeInterval, trimEnd: TimeInterval) {
+        self.trimStart = trimStart
+        self.trimEnd = trimEnd
+        
         if let url = editedVideoURL {
             if lastEditedURL != url || player == nil {
                 lastEditedURL = url
@@ -115,6 +141,17 @@ final class VideoPlayerLoader: ObservableObject {
     func setMuted(_ muted: Bool) {
         player?.isMuted = muted
     }
+
+    func updateTrim(start: TimeInterval, end: TimeInterval) {
+        trimStart = start
+        trimEnd = end
+        guard let player = player else { return }
+        
+        let currentTime = player.currentTime().seconds
+        if currentTime < trimStart || currentTime > trimEnd {
+            player.seek(to: CMTime(seconds: trimStart, preferredTimescale: 600))
+        }
+    }
     
     private func setPlayer(_ newPlayer: AVPlayer, isMuted: Bool) {
         cleanupObservers()
@@ -132,17 +169,39 @@ final class VideoPlayerLoader: ObservableObject {
             object: player?.currentItem,
             queue: .main
         ) { [weak self] _ in
-            self?.player?.seek(to: .zero)
-            self?.player?.pause()
+            guard let self = self else { return }
+            self.player?.seek(to: CMTime(seconds: self.trimEnd, preferredTimescale: 600))
+            self.player?.pause()
+        }
+        
+        addTimeObserver()
+        if trimStart > 0 {
+            player?.seek(to: CMTime(seconds: trimStart, preferredTimescale: 600))
         }
     }
     
     private func cleanupObservers() {
         timeControlObservation?.invalidate()
         timeControlObservation = nil
+        if let timeObserver = timeObserver, let player = player {
+            player.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
         if let endObserver = endObserver {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
+        }
+    }
+
+    private func addTimeObserver() {
+        guard let player = player else { return }
+        let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self else { return }
+            let seconds = time.seconds
+            if seconds >= self.trimEnd {
+                player.pause()
+            }
         }
     }
 }

@@ -444,7 +444,9 @@ private struct MediaViewerItem: View {
                 InlineVideoPlayer(
                     asset: media.asset,
                     editedVideoURL: media.editedVideoURL,
-                    isMuted: media.isAudioMuted
+                    isMuted: media.isAudioMuted,
+                    trimStart: viewModel.currentTrimStart,
+                    trimEnd: viewModel.currentTrimEnd
                 )
                 .frame(width: size.width, height: size.height)
                 .clipped()
