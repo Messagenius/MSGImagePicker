@@ -25,6 +25,9 @@ public struct PickedMedia: Identifiable, Sendable {
     /// The URL to the edited video file, if the user made modifications. Nil if unedited.
     public var editedVideoURL: URL?
     
+    /// Normalized crop rect for video (0...1) in oriented video coordinates.
+    public var videoCropNormalizedRect: CGRect?
+
     /// Video trim start time in seconds. Nil means start from beginning.
     public var trimStart: TimeInterval?
     
@@ -42,7 +45,7 @@ public struct PickedMedia: Identifiable, Sendable {
     
     /// Whether this media has been edited.
     public var isEdited: Bool {
-        editedImage != nil || editedVideoURL != nil || isTrimmed || isAudioMuted
+        editedImage != nil || editedVideoURL != nil || videoCropNormalizedRect != nil || isTrimmed || isAudioMuted
     }
     
     /// Whether the video has been trimmed from its original duration.
@@ -86,6 +89,7 @@ public struct PickedMedia: Identifiable, Sendable {
     ///   - asset: The PHAsset from the photo library.
     ///   - editedImage: Optional edited image.
     ///   - editedVideoURL: Optional URL to edited video.
+    ///   - videoCropNormalizedRect: Optional normalized crop rect for video.
     ///   - caption: Caption text. Default is empty.
     ///   - selectionOrder: The selection order (1-based).
     public init(
@@ -93,6 +97,7 @@ public struct PickedMedia: Identifiable, Sendable {
         asset: PHAsset,
         editedImage: UIImage? = nil,
         editedVideoURL: URL? = nil,
+        videoCropNormalizedRect: CGRect? = nil,
         trimStart: TimeInterval? = nil,
         trimEnd: TimeInterval? = nil,
         isAudioMuted: Bool = false,
@@ -103,6 +108,7 @@ public struct PickedMedia: Identifiable, Sendable {
         self.asset = asset
         self.editedImage = editedImage
         self.editedVideoURL = editedVideoURL
+        self.videoCropNormalizedRect = videoCropNormalizedRect
         self.trimStart = trimStart
         self.trimEnd = trimEnd
         self.isAudioMuted = isAudioMuted

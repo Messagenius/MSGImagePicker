@@ -13,6 +13,7 @@ import Photos
 struct VideoFrameStripView: View {
     
     let asset: PHAsset
+    let videoURL: URL?
     let frameHeight: CGFloat
     
     @State private var frames: [UIImage] = []
@@ -55,6 +56,10 @@ struct VideoFrameStripView: View {
                     extractFrames(count: newCount)
                 }
             }
+            .onChange(of: videoURL?.absoluteString) { _, _ in
+                frames = []
+                extractFrames(count: frameCount)
+            }
             .onAppear {
                 extractFrames(count: frameCount)
             }
@@ -72,6 +77,18 @@ struct VideoFrameStripView: View {
     
     private func extractFrames(count: Int) {
         isLoading = true
+        
+        if let url = videoURL {
+            let avAsset = AVAsset(url: url)
+            Task {
+                let extractedFrames = await extractFramesAsync(from: avAsset, count: count)
+                await MainActor.run {
+                    frames = extractedFrames
+                    isLoading = false
+                }
+            }
+            return
+        }
         
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true

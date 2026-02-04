@@ -12,6 +12,7 @@ import Photos
 struct VideoTrimControlsView: View {
     
     let asset: PHAsset
+    let videoURL: URL?
     let duration: TimeInterval
     
     @Binding var trimStart: TimeInterval
@@ -37,7 +38,7 @@ struct VideoTrimControlsView: View {
             
             ZStack(alignment: .leading) {
                 // Frame strip (background)
-                VideoFrameStripView(asset: asset, frameHeight: stripHeight)
+                VideoFrameStripView(asset: asset, videoURL: videoURL, frameHeight: stripHeight)
                     .padding(.horizontal, handleWidth)
                 
                 // Non-selected overlay (left side)

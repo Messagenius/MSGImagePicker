@@ -7,6 +7,12 @@
 
 import SwiftUI
 
+/// Result of a crop operation.
+struct CropResult {
+    let croppedImage: UIImage
+    let normalizedCropRect: CGRect
+}
+
 /// A view for cropping images with interactive crop rectangle and zoom/pan support.
 @available(iOS 16.0, *)
 struct CropView: View {
@@ -15,7 +21,7 @@ struct CropView: View {
     
     let image: UIImage
     let onCancel: () -> Void
-    let onDone: (UIImage) -> Void
+    let onDone: (CropResult) -> Void
     
     // MARK: - State
     
@@ -290,14 +296,14 @@ struct CropView: View {
     // MARK: - Crop Logic
     
     private func performCrop() {
-        guard let croppedImage = cropImage() else {
+        guard let cropResult = cropResult() else {
             onCancel()
             return
         }
-        onDone(croppedImage)
+        onDone(cropResult)
     }
     
-    private func cropImage() -> UIImage? {
+    private func cropResult() -> CropResult? {
         let imageSize = image.size
         
         // Calculate the scale factor between display and actual image
@@ -321,8 +327,16 @@ struct CropView: View {
         guard let cgImage = image.cgImage?.cropping(to: cropRectInImage) else {
             return nil
         }
+        let croppedImage = UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
         
-        return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+        let normalizedRect = CGRect(
+            x: cropRectInImage.minX / imageSize.width,
+            y: cropRectInImage.minY / imageSize.height,
+            width: cropRectInImage.width / imageSize.width,
+            height: cropRectInImage.height / imageSize.height
+        )
+        
+        return CropResult(croppedImage: croppedImage, normalizedCropRect: normalizedRect)
     }
 }
 

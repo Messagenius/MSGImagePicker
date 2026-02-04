@@ -152,6 +152,17 @@ final class MediaEditViewModel: ObservableObject {
             set: { self.currentIsAudioMuted = $0 }
         )
     }
+
+    /// The current video's normalized crop rect (0...1). Nil if not cropped.
+    var currentVideoCropNormalizedRect: CGRect? {
+        get {
+            currentMedia?.videoCropNormalizedRect
+        }
+        set {
+            guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
+            mediaItems[currentIndex].videoCropNormalizedRect = newValue
+        }
+    }
     
     // MARK: - Media Management
     
@@ -197,6 +208,7 @@ final class MediaEditViewModel: ObservableObject {
                 preserved.caption = existing.caption
                 preserved.editedImage = existing.editedImage
                 preserved.editedVideoURL = existing.editedVideoURL
+                preserved.videoCropNormalizedRect = existing.videoCropNormalizedRect
                 preserved.trimStart = existing.trimStart
                 preserved.trimEnd = existing.trimEnd
                 preserved.isAudioMuted = existing.isAudioMuted
@@ -229,6 +241,16 @@ final class MediaEditViewModel: ObservableObject {
     func applyEdit(_ image: UIImage) {
         guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
         mediaItems[currentIndex].editedImage = image
+    }
+
+    /// Applies a video crop to the current media item.
+    /// - Parameters:
+    ///   - url: The URL of the cropped video.
+    ///   - normalizedRect: Normalized crop rect (0...1) in oriented video coordinates.
+    func applyVideoCrop(url: URL, normalizedRect: CGRect) {
+        guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
+        mediaItems[currentIndex].editedVideoURL = url
+        mediaItems[currentIndex].videoCropNormalizedRect = normalizedRect
     }
     
     // MARK: - Selection Modification

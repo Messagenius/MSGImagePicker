@@ -31,6 +31,12 @@ public struct MediaEditView: View {
     
     /// Image for the crop view (loaded when entering crop mode)
     @State private var cropImage: UIImage?
+
+    /// Whether a video crop export is in progress
+    @State private var isExportingVideoCrop: Bool = false
+
+    /// Task for video crop export
+    @State private var videoCropTask: Task<Void, Never>?
     
     /// Namespace for matched geometry effect transitions
     @Namespace private var imageTransitionNamespace
@@ -100,6 +106,7 @@ public struct MediaEditView: View {
             // Video trim controls (only for videos) - positioned below top bar
             if viewModel.currentMediaIsVideo, let currentMedia = viewModel.currentMedia {
                 videoTrimSection(for: currentMedia)
+                    .id(currentMedia.id) // Force view recreation when media changes
                     .padding(.top, 8)
             }
             
@@ -117,22 +124,28 @@ public struct MediaEditView: View {
         switch mode {
         case .crop:
             if let image = cropImage {
-                CropView(
-                    image: image,
-                    onCancel: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            viewModel.exitEditingMode()
+                ZStack {
+                    CropView(
+                        image: image,
+                        onCancel: {
+                            videoCropTask?.cancel()
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                viewModel.exitEditingMode()
+                            }
+                            cropImage = nil
+                        },
+                        onDone: { result in
+                            handleCropDone(result)
                         }
-                        cropImage = nil
-                    },
-                    onDone: { croppedImage in
-                        viewModel.applyEdit(croppedImage)
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            viewModel.exitEditingMode()
-                        }
-                        cropImage = nil
+                    )
+                    
+                    if isExportingVideoCrop {
+                        Color.black.opacity(0.5)
+                            .ignoresSafeArea()
+                        ProgressView()
+                            .tint(.white)
                     }
-                )
+                }
             } else {
                 // Loading state while image loads
                 ProgressView()
@@ -277,6 +290,7 @@ public struct MediaEditView: View {
             // Frame strip with trim handles
             VideoTrimControlsView(
                 asset: media.asset,
+                videoURL: media.editedVideoURL,
                 duration: media.videoDuration,
                 trimStart: viewModel.currentTrimStartBinding,
                 trimEnd: viewModel.currentTrimEndBinding
@@ -372,6 +386,44 @@ public struct MediaEditView: View {
     
     private func handleSend() {
         onSend(viewModel.mediaItems)
+    }
+
+    // MARK: - Crop Handling
+
+    private func handleCropDone(_ result: CropResult) {
+        guard let currentMedia = viewModel.currentMedia else { return }
+        
+        if currentMedia.isVideo {
+            isExportingVideoCrop = true
+            videoCropTask?.cancel()
+            videoCropTask = Task {
+                do {
+                    let url = try await VideoCropper.cropVideo(
+                        asset: currentMedia.asset,
+                        normalizedCropRect: result.normalizedCropRect
+                    )
+                    
+                    await MainActor.run {
+                        viewModel.applyVideoCrop(url: url, normalizedRect: result.normalizedCropRect)
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            viewModel.exitEditingMode()
+                        }
+                        cropImage = nil
+                        isExportingVideoCrop = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        isExportingVideoCrop = false
+                    }
+                }
+            }
+        } else {
+            viewModel.applyEdit(result.croppedImage)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                viewModel.exitEditingMode()
+            }
+            cropImage = nil
+        }
     }
 }
 
