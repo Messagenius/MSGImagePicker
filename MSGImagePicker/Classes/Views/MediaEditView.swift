@@ -440,7 +440,22 @@ private struct MediaViewerItem: View {
     
     var body: some View {
         ZStack {
-            if let displayImage = media.editedImage ?? image {
+            if media.isVideo {
+                InlineVideoPlayer(
+                    asset: media.asset,
+                    editedVideoURL: media.editedVideoURL,
+                    isMuted: media.isAudioMuted
+                )
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .contentShape(.rect)
+                .simultaneousGesture(
+                    TapGesture()
+                        .onEnded { _ in
+                            onTap()
+                        }
+                )
+            } else if let displayImage = media.editedImage ?? image {
                 Image(uiImage: displayImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -469,6 +484,7 @@ private struct MediaViewerItem: View {
     
     private func loadImage() {
         guard image == nil else { return }
+        guard media.isImage else { return }
         
         viewModel.loadFullImage(for: media.asset) { loadedImage in
             Task { @MainActor in
