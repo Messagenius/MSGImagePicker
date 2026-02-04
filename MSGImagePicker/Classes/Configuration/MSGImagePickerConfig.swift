@@ -24,6 +24,9 @@ public struct MSGImagePickerConfig {
     /// Whether to show the caption input field in the action bar. Default is true.
     public var showsCaptions: Bool
     
+    /// Name of the recipient, displayed in the send bar of the edit view. Default is empty.
+    public var recipientName: String
+    
     /// Optional handler for editing selected media.
     /// When provided, the Edit button will invoke this handler with the current selection.
     /// The handler should return the edited media array.
@@ -35,18 +38,21 @@ public struct MSGImagePickerConfig {
     ///   - allowsVideo: Allow video selection. Default is true.
     ///   - allowsPhoto: Allow photo selection. Default is true.
     ///   - showsCaptions: Show caption input field. Default is true.
+    ///   - recipientName: Name of the recipient for the edit view. Default is empty.
     ///   - editHandler: Optional async handler for editing media.
     public init(
         maxSelection: Int = 10,
         allowsVideo: Bool = true,
         allowsPhoto: Bool = true,
         showsCaptions: Bool = true,
+        recipientName: String = "",
         editHandler: (([PickedMedia]) async -> [PickedMedia])? = nil
     ) {
         self.maxSelection = maxSelection
         self.allowsVideo = allowsVideo
         self.allowsPhoto = allowsPhoto
         self.showsCaptions = showsCaptions
+        self.recipientName = recipientName
         self.editHandler = editHandler
     }
     

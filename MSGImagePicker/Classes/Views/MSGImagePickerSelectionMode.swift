@@ -1,39 +1,94 @@
 //
-//  MediaPickerView.swift
+//  MSGImagePickerSelectionMode.swift
 //  MSGImagePicker
 //
-//  Main view composing the media grid and action bar.
+//  Internal picker view for modifying media selection from MediaEditView.
 //
 
 import SwiftUI
 import Photos
 
-/// Main view for the media picker, containing the grid and action bar.
-struct MediaPickerView: View {
+/// Internal media picker for modifying selection from the edit view.
+/// Shows a different action bar with preview strip and "Next" button.
+struct MSGImagePickerSelectionMode: View {
+    
+    let config: MSGImagePickerConfig
+    let existingSelection: [PickedMedia]
+    let onCancel: () -> Void
+    let onApply: ([PickedMedia]) -> Void
+    
+    @StateObject private var viewModel: MediaPickerViewModel
+    
+    init(
+        config: MSGImagePickerConfig,
+        existingSelection: [PickedMedia],
+        onCancel: @escaping () -> Void,
+        onApply: @escaping ([PickedMedia]) -> Void
+    ) {
+        self.config = config
+        self.existingSelection = existingSelection
+        self.onCancel = onCancel
+        self.onApply = onApply
+        self._viewModel = StateObject(wrappedValue: MediaPickerViewModel(config: config))
+    }
+    
+    var body: some View {
+        NavigationStack {
+            MediaPickerSelectionModeView(
+                config: config,
+                existingSelection: existingSelection,
+                onCancel: onCancel,
+                onApply: onApply
+            )
+            .environmentObject(viewModel)
+        }
+        .onAppear {
+            // Pre-select existing media
+            preselectExistingMedia()
+        }
+    }
+    
+    private func preselectExistingMedia() {
+        // This will be called after viewModel loads items
+        // We need to select items that match the existing selection
+        let existingIds = Set(existingSelection.map { $0.asset.localIdentifier })
+        
+        Task { @MainActor in
+            // Wait for items to load
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            
+            for item in viewModel.items {
+                if existingIds.contains(item.asset.localIdentifier) && !viewModel.isSelected(item) {
+                    viewModel.toggleSelection(item)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Selection Mode View
+
+/// The main view content for selection mode.
+struct MediaPickerSelectionModeView: View {
     @EnvironmentObject private var viewModel: MediaPickerViewModel
     
     let config: MSGImagePickerConfig
+    let existingSelection: [PickedMedia]
     let onCancel: () -> Void
-    let onSend: ([PickedMedia]) -> Void
-    
-    @State private var showEditView: Bool = false
+    let onApply: ([PickedMedia]) -> Void
     
     var body: some View {
         VStack(spacing: 0) {
             // Content area
             contentView
             
-            // Action bar (only when items are selected)
-            if !viewModel.selectedItems.isEmpty {
-                ActionBarView(
-                    showsCaptions: config.showsCaptions,
-                    onEdit: { showEditView = true },
-                    onSend: handleSend
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            // Selection action bar (always visible in this mode)
+            SelectionModeActionBar(
+                viewModel: viewModel,
+                existingSelection: existingSelection,
+                onApply: handleApply
+            )
         }
-        .animation(.easeInOut(duration: 0.25), value: viewModel.selectedItems.isEmpty)
         .navigationTitle("Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -42,23 +97,10 @@ struct MediaPickerView: View {
             }
             
             ToolbarItem(placement: .primaryAction) {
-                if !viewModel.selectedItems.isEmpty {
-                    Text("\(viewModel.selectedItems.count)/\(config.maxSelection)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
+                Text("\(viewModel.selectedItems.count)/\(config.maxSelection)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
-        }
-        .fullScreenCover(isPresented: $showEditView) {
-            MediaEditView(
-                media: viewModel.buildPickedMedia(),
-                config: config,
-                onDismiss: { showEditView = false },
-                onSend: { editedMedia in
-                    showEditView = false
-                    onSend(editedMedia)
-                }
-            )
         }
     }
     
@@ -144,25 +186,23 @@ struct MediaPickerView: View {
     
     // MARK: - Actions
     
-    private func handleSend() {
+    private func handleApply() {
         let pickedMedia = viewModel.buildPickedMedia()
-        onSend(pickedMedia)
+        onApply(pickedMedia)
     }
 }
 
 // MARK: - Preview
 
 #if DEBUG
-struct MediaPickerView_Previews: PreviewProvider {
+struct MSGImagePickerSelectionMode_Previews: PreviewProvider {
     static var previews: some View {
-        NavigationStack {
-            MediaPickerView(
-                config: MSGImagePickerConfig(),
-                onCancel: {},
-                onSend: { _ in }
-            )
-            .environmentObject(MediaPickerViewModel(config: MSGImagePickerConfig()))
-        }
+        MSGImagePickerSelectionMode(
+            config: MSGImagePickerConfig(),
+            existingSelection: [],
+            onCancel: {},
+            onApply: { _ in }
+        )
     }
 }
 #endif
