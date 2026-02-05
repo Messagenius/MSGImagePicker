@@ -14,6 +14,12 @@ struct InlineVideoPlayer: View {
     let isMuted: Bool
     let trimStart: TimeInterval
     let trimEnd: TimeInterval
+    /// Called when playback time changes (for trim strip playhead). Only used when this media is the current one.
+    var onCurrentTimeUpdate: ((TimeInterval) -> Void)? = nil
+    /// When set, seek the player to this time (from trim strip playhead drag). Only used when this media is current.
+    var seekRequest: TimeInterval? = nil
+    /// Called after seek completes; used to clear seekRequest so repeated seeks to same time work.
+    var onSeekCompleted: ((TimeInterval) -> Void)? = nil
     
     @StateObject private var loader = VideoPlayerLoader()
     
@@ -66,6 +72,15 @@ struct InlineVideoPlayer: View {
         .onDisappear {
             loader.pause()
         }
+        .onChange(of: loader.currentTime) { _, newValue in
+            onCurrentTimeUpdate?(newValue)
+        }
+        .onChange(of: seekRequest) { _, requestedTime in
+            guard let time = requestedTime else { return }
+            loader.seek(to: time) { [onSeekCompleted] in
+                onSeekCompleted?(time)
+            }
+        }
     }
     
     private var playButton: some View {
@@ -86,6 +101,8 @@ struct InlineVideoPlayer: View {
 final class VideoPlayerLoader: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isPlaying: Bool = false
+    /// Current playback time in seconds (for trim strip playhead).
+    @Published var currentTime: TimeInterval = 0
     
     private var timeControlObservation: NSKeyValueObservation?
     private var endObserver: Any?
@@ -155,6 +172,18 @@ final class VideoPlayerLoader: ObservableObject {
         player?.pause()
     }
     
+    /// Seeks to the given time and updates currentTime. Calls completion on main queue when seek finishes.
+    func seek(to time: TimeInterval, completion: (() -> Void)? = nil) {
+        guard let player = player else { completion?(); return }
+        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+        player.seek(to: cmTime) { [weak self] finished in
+            DispatchQueue.main.async {
+                self?.currentTime = time
+                completion?()
+            }
+        }
+    }
+    
     func setMuted(_ muted: Bool) {
         player?.isMuted = muted
     }
@@ -167,9 +196,10 @@ final class VideoPlayerLoader: ObservableObject {
         // Pause when user drags trim handles
         player.pause()
         
-        let currentTime = player.currentTime().seconds
-        if currentTime < trimStart || currentTime > trimEnd {
+        let now = player.currentTime().seconds
+        if now < trimStart || now > trimEnd {
             player.seek(to: CMTime(seconds: trimStart, preferredTimescale: 600))
+            self.currentTime = trimStart
         }
     }
     
@@ -199,6 +229,7 @@ final class VideoPlayerLoader: ObservableObject {
         if trimStart > 0 {
             player?.seek(to: CMTime(seconds: trimStart, preferredTimescale: 600))
         }
+        currentTime = trimStart
     }
     
     private func cleanupObservers() {
@@ -220,6 +251,7 @@ final class VideoPlayerLoader: ObservableObject {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             let seconds = time.seconds
+            self.currentTime = seconds
             if seconds >= self.trimEnd {
                 player.pause()
             }

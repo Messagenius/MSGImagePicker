@@ -28,6 +28,12 @@ final class MediaEditViewModel: ObservableObject {
     /// Whether the selection modification picker is being shown.
     @Published var isSelectingMedia: Bool = false
     
+    /// Current playback time of the visible video (for trim strip indicator). Only updated when that video's player is active.
+    @Published var currentPlaybackTime: TimeInterval = 0
+    
+    /// When set, the current video player should seek to this time (set by trim strip playhead drag). Cleared by player after seek.
+    @Published var seekToTime: TimeInterval?
+    
     // MARK: - Private Properties
     
     private let imageManager = PHCachingImageManager()
@@ -152,6 +158,13 @@ final class MediaEditViewModel: ObservableObject {
             get: { self.currentIsAudioMuted },
             set: { self.currentIsAudioMuted = $0 }
         )
+    }
+    
+    /// Clears seekToTime only if it still equals the given time (so a newer seek request is not cleared by an older seek completion).
+    func clearSeekRequest(ifEqualTo time: TimeInterval) {
+        if seekToTime == time {
+            seekToTime = nil
+        }
     }
 
     /// The current video's normalized crop rect (0...1). Nil if not cropped.

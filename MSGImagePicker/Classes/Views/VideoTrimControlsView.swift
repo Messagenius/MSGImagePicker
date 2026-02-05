@@ -16,6 +16,12 @@ struct VideoTrimControlsView: View {
     @Binding var trimStart: TimeInterval
     @Binding var trimEnd: TimeInterval
     
+    /// Current playback time (for playhead indicator).
+    var currentTime: TimeInterval = 0
+    
+    /// Called when the user drags the playhead to seek.
+    var onSeek: ((TimeInterval) -> Void)? = nil
+    
     /// The video duration from the media
     private var duration: TimeInterval {
         media.videoDuration
@@ -76,9 +82,51 @@ struct VideoTrimControlsView: View {
                 
                 // Right handle
                 trimHandle(isLeft: false, availableWidth: availableWidth)
+                
+                // Playhead (current time indicator)
+                playheadIndicator(availableWidth: availableWidth)
             }
         }
         .frame(height: stripHeight)
+    }
+    
+    // MARK: - Playhead Indicator
+    
+    @ViewBuilder
+    private func playheadIndicator(availableWidth: CGFloat) -> some View {
+        let clampedTime = max(0, min(duration, currentTime))
+        let progress = duration > 0 ? clampedTime / duration : 0
+        // Position playhead: time 0 = handleWidth, time duration = handleWidth + availableWidth
+        let xCenter = handleWidth + availableWidth * progress
+        let lineWidth: CGFloat = 2
+        let xOffset = xCenter - lineWidth / 2
+        let thumbWidth: CGFloat = 24
+        
+        ZStack(alignment: .leading) {
+            // Visible line
+            Rectangle()
+                .fill(Color.white)
+                .frame(width: lineWidth, height: stripHeight + 4)
+                .shadow(color: .black.opacity(0.6), radius: 1, x: 0, y: 0)
+            
+            // Draggable hit area (wider than the line)
+            if onSeek != nil {
+                Color.clear
+                    .frame(width: thumbWidth, height: stripHeight + 8)
+                    .contentShape(Rectangle())
+                    .offset(x: (lineWidth - thumbWidth) / 2)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let deltaX = value.startLocation.x + value.translation.width - thumbWidth / 2
+                                let deltaTime = duration > 0 ? (deltaX / availableWidth) * duration : 0
+                                let newTime = max(trimStart, min(trimEnd, clampedTime + deltaTime))
+                                onSeek?(newTime)
+                            }
+                    )
+            }
+        }
+        .offset(x: xOffset)
     }
     
     // MARK: - Overlay Calculations

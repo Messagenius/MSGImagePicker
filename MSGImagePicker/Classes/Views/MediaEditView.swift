@@ -119,6 +119,9 @@ public struct MediaEditView: View {
             // Bottom controls
             bottomControls
         }
+        .onChange(of: viewModel.currentIndex) { _, _ in
+            viewModel.currentPlaybackTime = viewModel.currentTrimStart
+        }
     }
     
     // MARK: - Editing View
@@ -303,7 +306,9 @@ public struct MediaEditView: View {
             VideoTrimControlsView(
                 media: media,
                 trimStart: viewModel.currentTrimStartBinding,
-                trimEnd: viewModel.currentTrimEndBinding
+                trimEnd: viewModel.currentTrimEndBinding,
+                currentTime: viewModel.currentPlaybackTime,
+                onSeek: { viewModel.seekToTime = $0 }
             )
             .padding(.horizontal)
             
@@ -455,7 +460,14 @@ private struct MediaViewerItem: View {
                     media: media,
                     isMuted: media.isAudioMuted,
                     trimStart: viewModel.currentTrimStart,
-                    trimEnd: viewModel.currentTrimEnd
+                    trimEnd: viewModel.currentTrimEnd,
+                    onCurrentTimeUpdate: { time in
+                        if viewModel.currentMedia?.id == media.id {
+                            viewModel.currentPlaybackTime = time
+                        }
+                    },
+                    seekRequest: viewModel.currentMedia?.id == media.id ? viewModel.seekToTime : nil,
+                    onSeekCompleted: { viewModel.clearSeekRequest(ifEqualTo: $0) }
                 )
                 .frame(width: size.width, height: size.height)
                 .clipped()
