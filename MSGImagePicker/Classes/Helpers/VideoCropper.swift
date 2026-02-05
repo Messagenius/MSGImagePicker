@@ -58,22 +58,37 @@ struct VideoCropper {
     ) async throws -> URL {
         let videoTrack = try videoTrack(from: avAsset)
         
-        let orientedSize = orientedVideoSize(for: videoTrack)
+        let orientedBounds = orientedVideoBounds(for: videoTrack)
         let cropRect = cropRectInOrientedCoordinates(
             normalizedRect: normalizedCropRect,
-            orientedSize: orientedSize
+            orientedBounds: orientedBounds
+        )
+        
+        // renderSize must have even width/height for H.264
+        let renderSize = evenSized(cropRect.size)
+        let scaleToRender = CGSize(
+            width: cropRect.width > 0 ? renderSize.width / cropRect.width : 1,
+            height: cropRect.height > 0 ? renderSize.height / cropRect.height : 1
         )
         
         let composition = AVMutableVideoComposition()
-        composition.renderSize = cropRect.size
+        composition.renderSize = renderSize
         composition.frameDuration = CMTime(value: 1, timescale: 30)
         
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: avAsset.duration)
         
+        // Transform: natural → oriented (preferredTransform), then translate so crop origin → (0,0).
+        // A.concatenating(B) applies A first, then B. So we do:
+        // preferredTransform.concatenating(translate) → first rotate/orient, then translate to crop origin.
+        // Then scale for even dimensions if needed.
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
-        let transform = videoTrack.preferredTransform
-            .translatedBy(x: -cropRect.minX, y: -cropRect.minY)
+        var transform = videoTrack.preferredTransform
+            .concatenating(CGAffineTransform(translationX: -cropRect.minX, y: -cropRect.minY))
+        if scaleToRender.width != 1 || scaleToRender.height != 1 {
+            transform = transform
+                .concatenating(CGAffineTransform(scaleX: scaleToRender.width, y: scaleToRender.height))
+        }
         layerInstruction.setTransform(transform, at: .zero)
         
         instruction.layerInstructions = [layerInstruction]
@@ -113,15 +128,25 @@ struct VideoCropper {
     
     // MARK: - Crop Geometry
     
-    private static func orientedVideoSize(for track: AVAssetTrack) -> CGSize {
-        let transformed = track.naturalSize.applying(track.preferredTransform)
-        return CGSize(width: abs(transformed.width), height: abs(transformed.height))
+    /// Bounding rect of the video frame in "oriented" (display) coordinates after preferredTransform.
+    /// Origin can be non-zero (e.g. after 90° rotation). Use this when converting normalized crop to pixel rect.
+    private static func orientedVideoBounds(for track: AVAssetTrack) -> CGRect {
+        let naturalRect = CGRect(origin: .zero, size: track.naturalSize)
+        let transformed = naturalRect.applying(track.preferredTransform)
+        // Bounding rect: transformed can have negative width/height
+        let minX = min(transformed.minX, transformed.maxX)
+        let minY = min(transformed.minY, transformed.maxY)
+        let width = abs(transformed.width)
+        let height = abs(transformed.height)
+        return CGRect(x: minX, y: minY, width: width, height: height)
     }
     
+    /// Converts normalized crop rect (0,0)=top-left from CropView to oriented (preferredTransform) pixel rect.
     private static func cropRectInOrientedCoordinates(
         normalizedRect: CGRect,
-        orientedSize: CGSize
+        orientedBounds: CGRect
     ) -> CGRect {
+        let size = orientedBounds.size
         let clamped = CGRect(
             x: min(max(normalizedRect.origin.x, 0), 1),
             y: min(max(normalizedRect.origin.y, 0), 1),
@@ -129,12 +154,20 @@ struct VideoCropper {
             height: min(max(normalizedRect.size.height, 0.01), 1)
         )
         
-        let originX = clamped.origin.x * orientedSize.width
-        let originY = clamped.origin.y * orientedSize.height
-        let width = min(clamped.size.width * orientedSize.width, orientedSize.width - originX)
-        let height = min(clamped.size.height * orientedSize.height, orientedSize.height - originY)
+        let originX = orientedBounds.minX + clamped.origin.x * size.width
+        let originY = orientedBounds.minY + clamped.origin.y * size.height
+        let cropWidth = min(clamped.size.width * size.width, orientedBounds.maxX - originX)
+        let cropHeight = min(clamped.size.height * size.height, orientedBounds.maxY - originY)
         
-        return CGRect(x: originX, y: originY, width: width, height: height).integral
+        return CGRect(x: originX, y: originY, width: cropWidth, height: cropHeight).integral
+    }
+    
+    /// Returns size with even width and height (required by H.264).
+    private static func evenSized(_ size: CGSize) -> CGSize {
+        CGSize(
+            width: max(2, CGFloat(Int(size.width) & ~1)),
+            height: max(2, CGFloat(Int(size.height) & ~1))
+        )
     }
     
     // MARK: - Export

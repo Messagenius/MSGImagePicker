@@ -304,38 +304,40 @@ struct CropView: View {
     }
     
     private func cropResult() -> CropResult? {
-        let imageSize = image.size
-        
-        // Calculate the scale factor between display and actual image
+        // Normalize orientation so cgImage coordinates match display (image.size).
+        // Required for captured images with EXIF orientation; library images often have .up.
+        let imageToCrop = image.fixedOrientation()
+        let imageSize = imageToCrop.size
+
+        // Scale factor between display rect and image pixels
         let displayToImageScaleX = imageSize.width / imageDisplayRect.width
         let displayToImageScaleY = imageSize.height / imageDisplayRect.height
-        
-        // Calculate crop rect in image coordinates
+
+        // Crop rect in image (pixel) coordinates
         let cropInImageX = (cropRect.minX - imageDisplayRect.minX) * displayToImageScaleX
         let cropInImageY = (cropRect.minY - imageDisplayRect.minY) * displayToImageScaleY
         let cropInImageWidth = cropRect.width * displayToImageScaleX
         let cropInImageHeight = cropRect.height * displayToImageScaleY
-        
+
         let cropRectInImage = CGRect(
             x: max(0, cropInImageX),
             y: max(0, cropInImageY),
             width: min(cropInImageWidth, imageSize.width - max(0, cropInImageX)),
             height: min(cropInImageHeight, imageSize.height - max(0, cropInImageY))
         )
-        
-        // Perform crop
-        guard let cgImage = image.cgImage?.cropping(to: cropRectInImage) else {
+
+        guard let cgImage = imageToCrop.cgImage?.cropping(to: cropRectInImage) else {
             return nil
         }
-        let croppedImage = UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
-        
+        let croppedImage = UIImage(cgImage: cgImage, scale: imageToCrop.scale, orientation: .up)
+
         let normalizedRect = CGRect(
             x: cropRectInImage.minX / imageSize.width,
             y: cropRectInImage.minY / imageSize.height,
             width: cropRectInImage.width / imageSize.width,
             height: cropRectInImage.height / imageSize.height
         )
-        
+
         return CropResult(croppedImage: croppedImage, normalizedCropRect: normalizedRect)
     }
 }
