@@ -100,6 +100,7 @@ struct MediaPickerSelectionModeView: View {
                 Text("\(viewModel.selectedItems.count)/\(config.maxSelection)")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
+                    .fixedSize()
             }
         }
     }
