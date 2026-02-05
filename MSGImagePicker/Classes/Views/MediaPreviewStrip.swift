@@ -11,10 +11,21 @@ import Photos
 /// Horizontal scrollable strip of media thumbnails with selection and add functionality.
 struct MediaPreviewStrip: View {
     @ObservedObject var viewModel: MediaEditViewModel
+    let showsAddButton: Bool
     let onAddMedia: () -> Void
     
     @ScaledMetric private var thumbnailSize: CGFloat = 60
     @ScaledMetric private var spacing: CGFloat = 8
+    
+    init(
+        viewModel: MediaEditViewModel,
+        showsAddButton: Bool = true,
+        onAddMedia: @escaping () -> Void
+    ) {
+        self.viewModel = viewModel
+        self.showsAddButton = showsAddButton
+        self.onAddMedia = onAddMedia
+    }
     
     var body: some View {
         ScrollViewReader { proxy in
@@ -38,9 +49,11 @@ struct MediaPreviewStrip: View {
                         .id(media.id)
                     }
                     
-                    // Add button
-                    addButton
-                        .frame(width: thumbnailSize, height: thumbnailSize)
+                    // Add button (optional)
+                    if showsAddButton {
+                        addButton
+                            .frame(width: thumbnailSize, height: thumbnailSize)
+                    }
                 }
                 .padding(.horizontal)
             }
@@ -172,7 +185,7 @@ private struct PreviewThumbnailView: View {
     private func loadThumbnail() {
         guard thumbnail == nil else { return }
         
-        viewModel.loadThumbnail(for: media.asset) { image in
+        viewModel.loadThumbnail(for: media) { image in
             Task { @MainActor in
                 self.thumbnail = image
             }

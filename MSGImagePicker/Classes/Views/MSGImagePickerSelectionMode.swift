@@ -51,7 +51,8 @@ struct MSGImagePickerSelectionMode: View {
     private func preselectExistingMedia() {
         // This will be called after viewModel loads items
         // We need to select items that match the existing selection
-        let existingIds = Set(existingSelection.map { $0.asset.localIdentifier })
+        // Only consider library media (captured media can't be pre-selected from library)
+        let existingIds = Set(existingSelection.compactMap { $0.asset?.localIdentifier })
         
         Task { @MainActor in
             // Wait for items to load

@@ -11,7 +11,7 @@ import Photos
 /// A view displaying video trim info: mute button and duration/size label.
 struct VideoTrimInfoBar: View {
     
-    let asset: PHAsset
+    let media: PickedMedia
     let trimStart: TimeInterval
     let trimEnd: TimeInterval
     @Binding var isMuted: Bool
@@ -25,7 +25,7 @@ struct VideoTrimInfoBar: View {
     
     private var estimatedSize: Int64? {
         guard let originalSize = originalFileSize else { return nil }
-        let originalDuration = asset.duration
+        let originalDuration = media.videoDuration
         guard originalDuration > 0 else { return nil }
         
         let ratio = trimmedDuration / originalDuration
@@ -111,12 +111,28 @@ struct VideoTrimInfoBar: View {
     // MARK: - File Size Fetching
     
     private func fetchFileSize() {
-        let resources = PHAssetResource.assetResources(for: asset)
-        
-        // Look for the primary video resource
-        if let videoResource = resources.first(where: { $0.type == .video }) {
-            if let fileSize = videoResource.value(forKey: "fileSize") as? Int64 {
-                originalFileSize = fileSize
+        switch media.source {
+        case .library(let asset):
+            let resources = PHAssetResource.assetResources(for: asset)
+            
+            // Look for the primary video resource
+            if let videoResource = resources.first(where: { $0.type == .video }) {
+                if let fileSize = videoResource.value(forKey: "fileSize") as? Int64 {
+                    originalFileSize = fileSize
+                }
+            }
+            
+        case .captured(let data):
+            // For captured videos, get file size from URL
+            if let url = data.videoURL {
+                do {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                    if let fileSize = attributes[.size] as? Int64 {
+                        originalFileSize = fileSize
+                    }
+                } catch {
+                    originalFileSize = nil
+                }
             }
         }
     }

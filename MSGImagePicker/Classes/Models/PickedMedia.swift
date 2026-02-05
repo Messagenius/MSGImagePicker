@@ -9,6 +9,44 @@ import Foundation
 import Photos
 import UIKit
 
+// MARK: - Media Source
+
+/// Represents the source of a media item.
+public enum MediaSource: Sendable {
+    /// Media selected from the Photo Library.
+    case library(PHAsset)
+    /// Media captured directly from the camera.
+    case captured(CapturedMediaData)
+}
+
+/// Data for media captured directly from camera.
+public struct CapturedMediaData: Sendable {
+    /// The captured image (for photos).
+    public let image: UIImage?
+    /// The URL to the captured video file (for videos).
+    public let videoURL: URL?
+    /// The duration of the video in seconds. 0 for images.
+    public let duration: TimeInterval
+    
+    /// Creates captured media data for a photo.
+    public static func photo(_ image: UIImage) -> CapturedMediaData {
+        CapturedMediaData(image: image, videoURL: nil, duration: 0)
+    }
+    
+    /// Creates captured media data for a video.
+    public static func video(url: URL, duration: TimeInterval) -> CapturedMediaData {
+        CapturedMediaData(image: nil, videoURL: url, duration: duration)
+    }
+    
+    public init(image: UIImage?, videoURL: URL?, duration: TimeInterval) {
+        self.image = image
+        self.videoURL = videoURL
+        self.duration = duration
+    }
+}
+
+// MARK: - PickedMedia
+
 /// Represents a media item selected by the user.
 /// This is the output model returned via the `onSend` callback.
 public struct PickedMedia: Identifiable, Sendable {
@@ -16,8 +54,8 @@ public struct PickedMedia: Identifiable, Sendable {
     /// Unique identifier for the media item.
     public let id: String
     
-    /// The original PHAsset from the photo library.
-    public let asset: PHAsset
+    /// The source of the media (library or captured).
+    public let source: MediaSource
     
     /// The edited image, if the user made modifications. Nil if unedited.
     public var editedImage: UIImage?
@@ -68,28 +106,123 @@ public struct PickedMedia: Identifiable, Sendable {
         effectiveTrimEnd - effectiveTrimStart
     }
     
-    /// Whether this is a video asset.
+    /// Whether this is a video.
     public var isVideo: Bool {
-        asset.mediaType == .video
+        switch source {
+        case .library(let asset):
+            return asset.mediaType == .video
+        case .captured(let data):
+            return data.videoURL != nil
+        }
     }
     
-    /// Whether this is an image asset.
+    /// Whether this is an image.
     public var isImage: Bool {
-        asset.mediaType == .image
+        switch source {
+        case .library(let asset):
+            return asset.mediaType == .image
+        case .captured(let data):
+            return data.image != nil
+        }
     }
     
     /// The duration of the video in seconds. Returns 0 for images.
     public var videoDuration: TimeInterval {
-        asset.duration
+        switch source {
+        case .library(let asset):
+            return asset.duration
+        case .captured(let data):
+            return data.duration
+        }
     }
     
-    /// Creates a new PickedMedia instance.
+    /// Whether this media is from the photo library.
+    public var isFromLibrary: Bool {
+        if case .library = source { return true }
+        return false
+    }
+    
+    /// Whether this media was captured from camera.
+    public var isCaptured: Bool {
+        if case .captured = source { return true }
+        return false
+    }
+    
+    /// The PHAsset if this media is from the library, nil otherwise.
+    public var asset: PHAsset? {
+        if case .library(let asset) = source { return asset }
+        return nil
+    }
+    
+    /// The captured media data if this was captured, nil otherwise.
+    public var capturedData: CapturedMediaData? {
+        if case .captured(let data) = source { return data }
+        return nil
+    }
+    
+    /// The original image for captured photos, nil for library media or videos.
+    public var originalCapturedImage: UIImage? {
+        capturedData?.image
+    }
+    
+    /// The original video URL for captured videos, nil for library media or photos.
+    public var originalCapturedVideoURL: URL? {
+        capturedData?.videoURL
+    }
+    
+    // MARK: - Initializers
+    
+    /// Creates a new PickedMedia instance with a media source.
+    /// - Parameters:
+    ///   - id: Unique identifier. Auto-generated if nil.
+    ///   - source: The source of the media (library or captured).
+    ///   - editedImage: Optional edited image.
+    ///   - editedVideoURL: Optional URL to edited video.
+    ///   - videoCropNormalizedRect: Optional normalized crop rect for video.
+    ///   - trimStart: Video trim start time.
+    ///   - trimEnd: Video trim end time.
+    ///   - isAudioMuted: Whether audio is muted.
+    ///   - caption: Caption text. Default is empty.
+    ///   - selectionOrder: The selection order (1-based).
+    public init(
+        id: String? = nil,
+        source: MediaSource,
+        editedImage: UIImage? = nil,
+        editedVideoURL: URL? = nil,
+        videoCropNormalizedRect: CGRect? = nil,
+        trimStart: TimeInterval? = nil,
+        trimEnd: TimeInterval? = nil,
+        isAudioMuted: Bool = false,
+        caption: String = "",
+        selectionOrder: Int
+    ) {
+        switch source {
+        case .library(let asset):
+            self.id = id ?? asset.localIdentifier
+        case .captured:
+            self.id = id ?? UUID().uuidString
+        }
+        self.source = source
+        self.editedImage = editedImage
+        self.editedVideoURL = editedVideoURL
+        self.videoCropNormalizedRect = videoCropNormalizedRect
+        self.trimStart = trimStart
+        self.trimEnd = trimEnd
+        self.isAudioMuted = isAudioMuted
+        self.caption = caption
+        self.selectionOrder = selectionOrder
+    }
+    
+    /// Convenience initializer for library media (backward compatibility).
     /// - Parameters:
     ///   - id: Unique identifier (defaults to asset's localIdentifier).
     ///   - asset: The PHAsset from the photo library.
     ///   - editedImage: Optional edited image.
     ///   - editedVideoURL: Optional URL to edited video.
     ///   - videoCropNormalizedRect: Optional normalized crop rect for video.
+    ///   - trimStart: Video trim start time.
+    ///   - trimEnd: Video trim end time.
+    ///   - isAudioMuted: Whether audio is muted.
     ///   - caption: Caption text. Default is empty.
     ///   - selectionOrder: The selection order (1-based).
     public init(
@@ -104,16 +237,54 @@ public struct PickedMedia: Identifiable, Sendable {
         caption: String = "",
         selectionOrder: Int
     ) {
-        self.id = id ?? asset.localIdentifier
-        self.asset = asset
-        self.editedImage = editedImage
-        self.editedVideoURL = editedVideoURL
-        self.videoCropNormalizedRect = videoCropNormalizedRect
-        self.trimStart = trimStart
-        self.trimEnd = trimEnd
-        self.isAudioMuted = isAudioMuted
-        self.caption = caption
-        self.selectionOrder = selectionOrder
+        self.init(
+            id: id,
+            source: .library(asset),
+            editedImage: editedImage,
+            editedVideoURL: editedVideoURL,
+            videoCropNormalizedRect: videoCropNormalizedRect,
+            trimStart: trimStart,
+            trimEnd: trimEnd,
+            isAudioMuted: isAudioMuted,
+            caption: caption,
+            selectionOrder: selectionOrder
+        )
+    }
+    
+    /// Convenience initializer for captured photo.
+    /// - Parameters:
+    ///   - image: The captured image.
+    ///   - caption: Caption text. Default is empty.
+    ///   - selectionOrder: The selection order (1-based). Default is 1.
+    public init(
+        capturedImage image: UIImage,
+        caption: String = "",
+        selectionOrder: Int = 1
+    ) {
+        self.init(
+            source: .captured(.photo(image)),
+            caption: caption,
+            selectionOrder: selectionOrder
+        )
+    }
+    
+    /// Convenience initializer for captured video.
+    /// - Parameters:
+    ///   - videoURL: The URL to the captured video file.
+    ///   - duration: The duration of the video in seconds.
+    ///   - caption: Caption text. Default is empty.
+    ///   - selectionOrder: The selection order (1-based). Default is 1.
+    public init(
+        capturedVideoURL videoURL: URL,
+        duration: TimeInterval,
+        caption: String = "",
+        selectionOrder: Int = 1
+    ) {
+        self.init(
+            source: .captured(.video(url: videoURL, duration: duration)),
+            caption: caption,
+            selectionOrder: selectionOrder
+        )
     }
 }
 

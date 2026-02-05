@@ -8,6 +8,7 @@
 import Foundation
 import Photos
 import SwiftUI
+import AVFoundation
 
 /// ViewModel for the media edit view, managing editing state and media modifications.
 @MainActor
@@ -273,7 +274,34 @@ final class MediaEditViewModel: ObservableObject {
     /// Full size for main media viewer.
     nonisolated static let fullSize = CGSize(width: 1200, height: 1200)
     
-    /// Loads a thumbnail image for the given asset.
+    /// Loads a thumbnail image for a media item.
+    /// - Parameters:
+    ///   - media: The media item to load thumbnail for.
+    ///   - targetSize: The target size for the thumbnail.
+    ///   - completion: Completion handler with the loaded image.
+    func loadThumbnail(for media: PickedMedia, targetSize: CGSize = MediaEditViewModel.thumbnailSize, completion: @escaping (UIImage?) -> Void) {
+        switch media.source {
+        case .library(let asset):
+            loadThumbnail(for: asset, targetSize: targetSize, completion: completion)
+        case .captured(let data):
+            loadCapturedThumbnail(data: data, targetSize: targetSize, completion: completion)
+        }
+    }
+    
+    /// Loads a full-size image for a media item.
+    /// - Parameters:
+    ///   - media: The media item to load.
+    ///   - completion: Completion handler with the loaded image.
+    func loadFullImage(for media: PickedMedia, completion: @escaping (UIImage?) -> Void) {
+        switch media.source {
+        case .library(let asset):
+            loadFullImage(for: asset, completion: completion)
+        case .captured(let data):
+            loadCapturedFullImage(data: data, completion: completion)
+        }
+    }
+    
+    /// Loads a thumbnail image for a PHAsset.
     /// - Parameters:
     ///   - asset: The PHAsset to load.
     ///   - targetSize: The target size for the thumbnail.
@@ -294,7 +322,7 @@ final class MediaEditViewModel: ObservableObject {
         }
     }
     
-    /// Loads a full-size image for the given asset.
+    /// Loads a full-size image for a PHAsset.
     /// - Parameters:
     ///   - asset: The PHAsset to load.
     ///   - completion: Completion handler with the loaded image.
@@ -311,6 +339,72 @@ final class MediaEditViewModel: ObservableObject {
             options: options
         ) { image, _ in
             completion(image)
+        }
+    }
+    
+    // MARK: - Captured Media Loading
+    
+    /// Loads a thumbnail for captured media.
+    private func loadCapturedThumbnail(data: CapturedMediaData, targetSize: CGSize, completion: @escaping (UIImage?) -> Void) {
+        if let image = data.image {
+            // For captured photos, resize the image
+            let thumbnail = resizeImage(image, to: targetSize)
+            completion(thumbnail)
+        } else if let videoURL = data.videoURL {
+            // For captured videos, generate thumbnail from video
+            generateVideoThumbnail(from: videoURL, at: 0, completion: completion)
+        } else {
+            completion(nil)
+        }
+    }
+    
+    /// Loads a full-size image for captured media.
+    private func loadCapturedFullImage(data: CapturedMediaData, completion: @escaping (UIImage?) -> Void) {
+        if let image = data.image {
+            completion(image)
+        } else if let videoURL = data.videoURL {
+            // For videos, generate a frame from the video
+            generateVideoThumbnail(from: videoURL, at: 0, completion: completion)
+        } else {
+            completion(nil)
+        }
+    }
+    
+    /// Resizes an image to fit within the target size while maintaining aspect ratio.
+    private func resizeImage(_ image: UIImage, to targetSize: CGSize) -> UIImage {
+        let widthRatio = targetSize.width / image.size.width
+        let heightRatio = targetSize.height / image.size.height
+        let ratio = max(widthRatio, heightRatio)
+        
+        let newSize = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+    
+    /// Generates a thumbnail from a video URL.
+    private func generateVideoThumbnail(from url: URL, at time: TimeInterval, completion: @escaping (UIImage?) -> Void) {
+        Task.detached(priority: .userInitiated) {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 400, height: 400)
+            
+            let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+            
+            do {
+                let cgImage = try generator.copyCGImage(at: cmTime, actualTime: nil)
+                let thumbnail = UIImage(cgImage: cgImage)
+                await MainActor.run {
+                    completion(thumbnail)
+                }
+            } catch {
+                await MainActor.run {
+                    completion(nil)
+                }
+            }
         }
     }
 }

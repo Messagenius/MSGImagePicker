@@ -10,13 +10,17 @@ import AVFoundation
 import Photos
 
 struct InlineVideoPlayer: View {
-    let asset: PHAsset
-    let editedVideoURL: URL?
+    let media: PickedMedia
     let isMuted: Bool
     let trimStart: TimeInterval
     let trimEnd: TimeInterval
     
     @StateObject private var loader = VideoPlayerLoader()
+    
+    /// The video URL to use (edited or original captured)
+    private var effectiveVideoURL: URL? {
+        media.editedVideoURL ?? media.originalCapturedVideoURL
+    }
     
     var body: some View {
         ZStack {
@@ -36,17 +40,15 @@ struct InlineVideoPlayer: View {
         }
         .onAppear {
             loader.load(
-                asset: asset,
-                editedVideoURL: editedVideoURL,
+                media: media,
                 isMuted: isMuted,
                 trimStart: trimStart,
                 trimEnd: trimEnd
             )
         }
-        .onChange(of: editedVideoURL?.absoluteString) { _, _ in
+        .onChange(of: effectiveVideoURL?.absoluteString) { _, _ in
             loader.load(
-                asset: asset,
-                editedVideoURL: editedVideoURL,
+                media: media,
                 isMuted: isMuted,
                 trimStart: trimStart,
                 trimEnd: trimEnd
@@ -87,7 +89,7 @@ final class VideoPlayerLoader: ObservableObject {
     
     private var timeControlObservation: NSKeyValueObservation?
     private var endObserver: Any?
-    private var lastEditedURL: URL?
+    private var lastVideoURL: URL?
     private var timeObserver: Any?
     private var trimStart: TimeInterval = 0
     private var trimEnd: TimeInterval = 0
@@ -96,21 +98,36 @@ final class VideoPlayerLoader: ObservableObject {
         cleanupObservers()
     }
     
-    func load(asset: PHAsset, editedVideoURL: URL?, isMuted: Bool, trimStart: TimeInterval, trimEnd: TimeInterval) {
+    func load(media: PickedMedia, isMuted: Bool, trimStart: TimeInterval, trimEnd: TimeInterval) {
         self.trimStart = trimStart
         self.trimEnd = trimEnd
         
-        if let url = editedVideoURL {
-            if lastEditedURL != url || player == nil {
-                lastEditedURL = url
-                setPlayer(AVPlayer(url: url), isMuted: isMuted)
+        // Check for edited video URL first
+        if let editedURL = media.editedVideoURL {
+            if lastVideoURL != editedURL || player == nil {
+                lastVideoURL = editedURL
+                setPlayer(AVPlayer(url: editedURL), isMuted: isMuted)
             } else {
                 setMuted(isMuted)
             }
             return
         }
         
-        lastEditedURL = nil
+        // Check for captured video URL
+        if let capturedURL = media.originalCapturedVideoURL {
+            if lastVideoURL != capturedURL || player == nil {
+                lastVideoURL = capturedURL
+                setPlayer(AVPlayer(url: capturedURL), isMuted: isMuted)
+            } else {
+                setMuted(isMuted)
+            }
+            return
+        }
+        
+        // Load from PHAsset (library media)
+        guard let asset = media.asset else { return }
+        
+        lastVideoURL = nil
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat

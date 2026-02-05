@@ -16,6 +16,29 @@ enum VideoCropperError: Error {
 
 struct VideoCropper {
     
+    /// Crops a video from a PickedMedia using a normalized crop rect and returns a temporary file URL.
+    /// - Parameters:
+    ///   - media: The PickedMedia containing the video.
+    ///   - normalizedCropRect: Crop rect in normalized coordinates (0...1) based on the oriented video size.
+    static func cropVideo(
+        media: PickedMedia,
+        normalizedCropRect: CGRect
+    ) async throws -> URL {
+        let avAsset: AVAsset
+        
+        switch media.source {
+        case .library(let phAsset):
+            avAsset = try await requestAVAsset(for: phAsset)
+        case .captured(let data):
+            guard let videoURL = data.videoURL else {
+                throw VideoCropperError.assetUnavailable
+            }
+            avAsset = AVURLAsset(url: videoURL)
+        }
+        
+        return try await cropAVAsset(avAsset, normalizedCropRect: normalizedCropRect)
+    }
+    
     /// Crops a video asset using a normalized crop rect and returns a temporary file URL.
     /// - Parameters:
     ///   - asset: The PHAsset representing the video.
@@ -25,6 +48,14 @@ struct VideoCropper {
         normalizedCropRect: CGRect
     ) async throws -> URL {
         let avAsset = try await requestAVAsset(for: asset)
+        return try await cropAVAsset(avAsset, normalizedCropRect: normalizedCropRect)
+    }
+    
+    /// Internal method to crop an AVAsset.
+    private static func cropAVAsset(
+        _ avAsset: AVAsset,
+        normalizedCropRect: CGRect
+    ) async throws -> URL {
         let videoTrack = try videoTrack(from: avAsset)
         
         let orientedSize = orientedVideoSize(for: videoTrack)

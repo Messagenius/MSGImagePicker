@@ -12,12 +12,14 @@ import Photos
 /// A view that displays a horizontal strip of video frames extracted at regular intervals.
 struct VideoFrameStripView: View {
     
-    let asset: PHAsset
+    let asset: PHAsset?
     let videoURL: URL?
     let frameHeight: CGFloat
     
     @State private var frames: [UIImage] = []
     @State private var isLoading = true
+    @State private var extractionTask: Task<Void, Never>?
+    @State private var currentGenerator: AVAssetImageGenerator?
     
     /// Width of each frame thumbnail
     private let frameWidth: CGFloat = 44
@@ -57,11 +59,15 @@ struct VideoFrameStripView: View {
                 }
             }
             .onChange(of: videoURL?.absoluteString) { _, _ in
+                cancelCurrentExtraction()
                 frames = []
                 extractFrames(count: frameCount)
             }
             .onAppear {
                 extractFrames(count: frameCount)
+            }
+            .onDisappear {
+                cancelCurrentExtraction()
             }
         }
         .frame(height: frameHeight)
@@ -73,15 +79,27 @@ struct VideoFrameStripView: View {
         max(1, Int(floor(width / frameWidth)))
     }
     
+    // MARK: - Cancellation
+    
+    private func cancelCurrentExtraction() {
+        extractionTask?.cancel()
+        extractionTask = nil
+        currentGenerator?.cancelAllCGImageGeneration()
+        currentGenerator = nil
+    }
+    
     // MARK: - Frame Extraction
     
     private func extractFrames(count: Int) {
+        cancelCurrentExtraction()
         isLoading = true
         
+        // If we have a direct video URL, use it
         if let url = videoURL {
-            let avAsset = AVAsset(url: url)
-            Task {
+            let avAsset = AVURLAsset(url: url)
+            extractionTask = Task {
                 let extractedFrames = await extractFramesAsync(from: avAsset, count: count)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     frames = extractedFrames
                     isLoading = false
@@ -90,9 +108,15 @@ struct VideoFrameStripView: View {
             return
         }
         
+        // If we have a PHAsset, request the video from the library
+        guard let asset = asset else {
+            isLoading = false
+            return
+        }
+        
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true
-        options.deliveryMode = .mediumQualityFormat
+        options.deliveryMode = .fastFormat  // Use fast format for thumbnails
         
         PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
             guard let avAsset = avAsset else {
@@ -102,8 +126,9 @@ struct VideoFrameStripView: View {
                 return
             }
             
-            Task {
+            extractionTask = Task {
                 let extractedFrames = await extractFramesAsync(from: avAsset, count: count)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     frames = extractedFrames
                     isLoading = false
@@ -116,41 +141,62 @@ struct VideoFrameStripView: View {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: frameWidth * 2, height: frameHeight * 2)
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
+        // Allow tolerance for much faster frame extraction
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 1, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
         
-        let duration = asset.duration.seconds
-        guard duration > 0 else { return [] }
+        // Store reference for cancellation
+        await MainActor.run {
+            currentGenerator = generator
+        }
         
-        var images: [UIImage] = []
+        let duration = try? await asset.load(.duration).seconds
+        guard let duration = duration, duration > 0 else { return [] }
         
+        // Generate times for all frames
+        var times: [NSValue] = []
         for i in 0..<count {
             let progress = Double(i) / Double(max(1, count - 1))
             let time = CMTime(seconds: progress * duration, preferredTimescale: 600)
+            times.append(NSValue(time: time))
+        }
+        
+        // Use async batch generation
+        return await withCheckedContinuation { continuation in
+            var images: [Int: UIImage] = [:]
+            var completedCount = 0
+            let totalCount = times.count
             
-            do {
-                let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-                let image = UIImage(cgImage: cgImage)
-                images.append(image)
-            } catch {
-                // If frame extraction fails, add a placeholder
-                if let placeholder = createPlaceholderImage() {
-                    images.append(placeholder)
+            generator.generateCGImagesAsynchronously(forTimes: times) { requestedTime, cgImage, actualTime, result, error in
+                defer {
+                    completedCount += 1
+                    if completedCount == totalCount {
+                        // Sort by index and return
+                        let sortedImages = images.keys.sorted().compactMap { images[$0] }
+                        continuation.resume(returning: sortedImages)
+                    }
+                }
+                
+                // Find index for this time
+                let index = times.firstIndex { ($0 as! NSValue).timeValue == requestedTime } ?? 0
+                
+                if let cgImage = cgImage {
+                    images[index] = UIImage(cgImage: cgImage)
+                } else {
+                    // Use placeholder for failed frames
+                    images[index] = self.createPlaceholderImage() ?? UIImage()
                 }
             }
         }
-        
-        return images
     }
     
     private func createPlaceholderImage() -> UIImage? {
         let size = CGSize(width: frameWidth, height: frameHeight)
-        UIGraphicsBeginImageContextWithOptions(size, true, 0)
-        UIColor.darkGray.setFill()
-        UIRectFill(CGRect(origin: .zero, size: size))
-        let image = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return image
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
     }
 }
 

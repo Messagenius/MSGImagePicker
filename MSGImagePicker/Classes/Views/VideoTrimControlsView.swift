@@ -11,12 +11,25 @@ import Photos
 /// A view that displays video trim controls with a frame strip and draggable handles.
 struct VideoTrimControlsView: View {
     
-    let asset: PHAsset
-    let videoURL: URL?
-    let duration: TimeInterval
+    let media: PickedMedia
     
     @Binding var trimStart: TimeInterval
     @Binding var trimEnd: TimeInterval
+    
+    /// The video duration from the media
+    private var duration: TimeInterval {
+        media.videoDuration
+    }
+    
+    /// The PHAsset if from library
+    private var asset: PHAsset? {
+        media.asset
+    }
+    
+    /// The video URL (edited or original captured)
+    private var videoURL: URL? {
+        media.editedVideoURL ?? media.originalCapturedVideoURL
+    }
     
     /// Minimum selection duration in seconds
     private let minimumDuration: TimeInterval = 1.0

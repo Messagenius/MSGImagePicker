@@ -21,6 +21,7 @@ public struct MediaEditView: View {
     @StateObject private var viewModel: MediaEditViewModel
     
     private let config: MSGImagePickerConfig
+    private let allowsMediaAddition: Bool
     private let recipientName: String
     private let onDismiss: () -> Void
     private let onSend: ([PickedMedia]) -> Void
@@ -45,18 +46,21 @@ public struct MediaEditView: View {
     /// - Parameters:
     ///   - media: The media items to edit.
     ///   - config: Configuration options (used for maxSelection when modifying selection).
+    ///   - allowsMediaAddition: Whether to allow adding more media from the library. Default is true.
     ///   - recipientName: Name of the recipient, displayed in the send bar.
     ///   - onDismiss: Callback when the user dismisses the edit view.
     ///   - onSend: Callback when the user sends the edited media.
     public init(
         media: [PickedMedia],
         config: MSGImagePickerConfig = MSGImagePickerConfig(),
+        allowsMediaAddition: Bool = true,
         recipientName: String = "",
         onDismiss: @escaping () -> Void,
         onSend: @escaping ([PickedMedia]) -> Void
     ) {
         self._viewModel = StateObject(wrappedValue: MediaEditViewModel(media: media))
         self.config = config
+        self.allowsMediaAddition = allowsMediaAddition
         self.recipientName = recipientName.isEmpty ? config.recipientName : recipientName
         self.onDismiss = onDismiss
         self.onSend = onSend
@@ -166,7 +170,7 @@ public struct MediaEditView: View {
         if let editedImage = currentMedia.editedImage {
             cropImage = editedImage
         } else {
-            viewModel.loadFullImage(for: currentMedia.asset) { loadedImage in
+            viewModel.loadFullImage(for: currentMedia) { loadedImage in
                 Task { @MainActor in
                     cropImage = loadedImage
                 }
@@ -257,13 +261,21 @@ public struct MediaEditView: View {
     
     // MARK: - Bottom Controls
     
+    /// Whether to show the preview strip (hidden when only one item and additions not allowed)
+    private var shouldShowPreviewStrip: Bool {
+        allowsMediaAddition || viewModel.mediaCount > 1
+    }
+    
     private var bottomControls: some View {
         VStack(spacing: 12) {
-            // Preview strip
-            MediaPreviewStrip(
-                viewModel: viewModel,
-                onAddMedia: { showSelectionPicker = true }
-            )
+            // Preview strip (hidden when single item and additions not allowed)
+            if shouldShowPreviewStrip {
+                MediaPreviewStrip(
+                    viewModel: viewModel,
+                    showsAddButton: allowsMediaAddition,
+                    onAddMedia: { showSelectionPicker = true }
+                )
+            }
             
             // Caption field
             captionField
@@ -289,9 +301,7 @@ public struct MediaEditView: View {
         VStack(spacing: 8) {
             // Frame strip with trim handles
             VideoTrimControlsView(
-                asset: media.asset,
-                videoURL: media.editedVideoURL,
-                duration: media.videoDuration,
+                media: media,
                 trimStart: viewModel.currentTrimStartBinding,
                 trimEnd: viewModel.currentTrimEndBinding
             )
@@ -299,7 +309,7 @@ public struct MediaEditView: View {
             
             // Info bar (mute + duration/size)
             VideoTrimInfoBar(
-                asset: media.asset,
+                media: media,
                 trimStart: viewModel.currentTrimStart,
                 trimEnd: viewModel.currentTrimEnd,
                 isMuted: viewModel.currentIsAudioMutedBinding
@@ -399,7 +409,7 @@ public struct MediaEditView: View {
             videoCropTask = Task {
                 do {
                     let url = try await VideoCropper.cropVideo(
-                        asset: currentMedia.asset,
+                        media: currentMedia,
                         normalizedCropRect: result.normalizedCropRect
                     )
                     
@@ -442,8 +452,7 @@ private struct MediaViewerItem: View {
         ZStack {
             if media.isVideo {
                 InlineVideoPlayer(
-                    asset: media.asset,
-                    editedVideoURL: media.editedVideoURL,
+                    media: media,
                     isMuted: media.isAudioMuted,
                     trimStart: viewModel.currentTrimStart,
                     trimEnd: viewModel.currentTrimEnd
@@ -457,7 +466,7 @@ private struct MediaViewerItem: View {
                             onTap()
                         }
                 )
-            } else if let displayImage = media.editedImage ?? image {
+            } else if let displayImage = media.editedImage ?? media.originalCapturedImage ?? image {
                 Image(uiImage: displayImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -487,8 +496,10 @@ private struct MediaViewerItem: View {
     private func loadImage() {
         guard image == nil else { return }
         guard media.isImage else { return }
+        // Skip loading if we already have captured image
+        guard media.originalCapturedImage == nil else { return }
         
-        viewModel.loadFullImage(for: media.asset) { loadedImage in
+        viewModel.loadFullImage(for: media) { loadedImage in
             Task { @MainActor in
                 self.image = loadedImage
             }
