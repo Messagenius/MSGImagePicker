@@ -164,6 +164,9 @@ final class VideoPlayerLoader: ObservableObject {
         trimEnd = end
         guard let player = player else { return }
         
+        // Pause when user drags trim handles
+        player.pause()
+        
         let currentTime = player.currentTime().seconds
         if currentTime < trimStart || currentTime > trimEnd {
             player.seek(to: CMTime(seconds: trimStart, preferredTimescale: 600))
@@ -187,7 +190,8 @@ final class VideoPlayerLoader: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            self.player?.seek(to: CMTime(seconds: self.trimEnd, preferredTimescale: 600))
+            // Seek to trim start so next play starts from the beginning of the trim range
+            self.player?.seek(to: CMTime(seconds: self.trimStart, preferredTimescale: 600))
             self.player?.pause()
         }
         
