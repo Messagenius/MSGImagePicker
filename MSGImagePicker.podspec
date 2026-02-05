@@ -27,5 +27,5 @@ badges, an action bar with caption input, and is designed to be presentation-agn
 
   s.source_files = 'MSGImagePicker/Classes/**/*.swift'
   
-  s.frameworks = 'Photos', 'PhotosUI', 'SwiftUI'
+  s.frameworks = 'Photos', 'PhotosUI', 'SwiftUI', 'CoreMotion'
 end
