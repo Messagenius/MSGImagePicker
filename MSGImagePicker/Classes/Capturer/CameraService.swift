@@ -453,9 +453,11 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         }
         
         // Rewrite image with EXIF orientation (metadata only, no pixel rotation)
+        // For front camera, we need to use mirrored orientation values
         let orientation = photoCaptureOrientation
+        let isFrontCamera = currentPosition == .front
         let dataWithOrientation: Data
-        if let rewritten = Self.jpegDataWithOrientationMetadata(imageData, captureOrientation: orientation) {
+        if let rewritten = Self.jpegDataWithOrientationMetadata(imageData, captureOrientation: orientation, isFrontCamera: isFrontCamera) {
             dataWithOrientation = rewritten
         } else {
             dataWithOrientation = imageData
@@ -469,23 +471,19 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
             return
         }
         
-        // Fix orientation for front camera (mirror)
-        let finalImage: UIImage
-        if currentPosition == .front {
-            finalImage = image.withHorizontallyFlippedOrientation()
-        } else {
-            finalImage = image
-        }
-        
         DispatchQueue.main.async { [weak self] in
-            self?.photoCompletion?(.success(finalImage))
+            self?.photoCompletion?(.success(image))
             self?.photoCompletion = nil
         }
     }
     
     /// Rewrites JPEG data with EXIF orientation metadata (no pixel rotation).
-    private static func jpegDataWithOrientationMetadata(_ imageData: Data, captureOrientation: AVCaptureVideoOrientation) -> Data? {
-        let exifOrientation = exifOrientationValue(for: captureOrientation)
+    /// - Parameters:
+    ///   - imageData: Original JPEG data from capture
+    ///   - captureOrientation: Device orientation at capture time
+    ///   - isFrontCamera: Whether the front camera was used (requires mirrored orientation)
+    private static func jpegDataWithOrientationMetadata(_ imageData: Data, captureOrientation: AVCaptureVideoOrientation, isFrontCamera: Bool) -> Data? {
+        let exifOrientation = exifOrientationValue(for: captureOrientation, isFrontCamera: isFrontCamera)
         guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         
@@ -501,13 +499,40 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
     }
     
     /// Maps AVCaptureVideoOrientation to EXIF orientation value (1–8).
-    private static func exifOrientationValue(for orientation: AVCaptureVideoOrientation) -> Int {
-        switch orientation {
-        case .portrait: return 1
-        case .portraitUpsideDown: return 3
-        case .landscapeRight: return 8
-        case .landscapeLeft: return 6
-        @unknown default: return 1
+    /// Front camera images need mirrored orientations to display correctly as a selfie.
+    /// - Parameters:
+    ///   - orientation: Device orientation at capture time
+    ///   - isFrontCamera: Whether the front camera was used
+    /// - Returns: EXIF orientation value (1-8)
+    private static func exifOrientationValue(for orientation: AVCaptureVideoOrientation, isFrontCamera: Bool) -> Int {
+        // EXIF orientation values:
+        // 1 = top-left (normal)
+        // 2 = top-right (mirrored horizontally)
+        // 3 = bottom-right (rotated 180°)
+        // 4 = bottom-left (mirrored vertically)
+        // 5 = left-top (mirrored and rotated 90° CCW)
+        // 6 = right-top (rotated 90° CW)
+        // 7 = right-bottom (mirrored and rotated 90° CW)
+        // 8 = left-bottom (rotated 90° CCW)
+        
+        if isFrontCamera {
+            // Front camera: use mirrored orientations for natural selfie appearance
+            switch orientation {
+            case .portrait: return 2            // top-right (mirrored horizontally)
+            case .portraitUpsideDown: return 4  // bottom-left (mirrored vertically)
+            case .landscapeRight: return 5      // left-top (mirrored + 90° CCW)
+            case .landscapeLeft: return 7       // right-bottom (mirrored + 90° CW)
+            @unknown default: return 2
+            }
+        } else {
+            // Back camera: standard orientations
+            switch orientation {
+            case .portrait: return 1            // top-left (normal)
+            case .portraitUpsideDown: return 3  // bottom-right (rotated 180°)
+            case .landscapeRight: return 8      // left-bottom (rotated 90° CCW)
+            case .landscapeLeft: return 6       // right-top (rotated 90° CW)
+            @unknown default: return 1
+            }
         }
     }
 }
