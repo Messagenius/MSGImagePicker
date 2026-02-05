@@ -18,6 +18,7 @@ struct ActionBarView: View {
     @ScaledMetric private var buttonSize: CGFloat = 44
     @ScaledMetric private var horizontalPadding: CGFloat = 12
     @ScaledMetric private var verticalPadding: CGFloat = 8
+    @ScaledMetric private var badgeSize: CGFloat = 18
     
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
@@ -66,9 +67,22 @@ struct ActionBarView: View {
     
     private var sendButton: some View {
         Button(action: onSend) {
-            Image(systemName: "arrow.up.circle.fill")
-                .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(.white, .blue)
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(.white, .blue)
+                
+                if !viewModel.selectedItems.isEmpty {
+                    Text("\(viewModel.selectedItems.count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: badgeSize, height: badgeSize)
+                        .background(Color.green)
+                        .clipShape(Circle())
+                        .offset(x: badgeSize * 0.35, y: -badgeSize * 0.35)
+                        .accessibilityLabel("Selected media: \(viewModel.selectedItems.count)")
+                }
+            }
         }
         .buttonStyle(.plain)
     }
