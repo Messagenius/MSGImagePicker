@@ -5,6 +5,7 @@
 //  Detects physical device orientation for rotating controls (interface stays portrait).
 //
 
+import AVFoundation
 import SwiftUI
 import CoreMotion
 
@@ -14,6 +15,17 @@ final class DeviceOrientationManager: ObservableObject {
 
     /// Rotation angle for controls (apply with .rotationEffect).
     @Published private(set) var iconRotationAngle: Angle = .zero
+
+    /// Physical device orientation for capture metadata (photo EXIF, video track).
+    var captureVideoOrientation: AVCaptureVideoOrientation {
+        let degrees = Int(iconRotationAngle.degrees.rounded())
+        switch degrees {
+        case 180: return .portraitUpsideDown
+        case 90: return .landscapeRight
+        case -90: return .landscapeLeft
+        default: return .portrait
+        }
+    }
 
     private let motionManager = CMMotionManager()
     private let updateInterval: TimeInterval = 0.15
@@ -42,11 +54,12 @@ final class DeviceOrientationManager: ObservableObject {
     }
 
     private func angle(from acceleration: CMAcceleration) -> Angle {
-        let threshold: Double = 0.6
-        if acceleration.x >= threshold { return .degrees(-90) }
-        if acceleration.x <= -threshold { return .degrees(90) }
-        if acceleration.y >= threshold { return .degrees(180) }
-        if acceleration.y <= -threshold { return .degrees(0) }
+        // Same thresholds as Mijick Camera (CameraManager+MotionManager): 0.75
+        let threshold: Double = 0.75
+        if acceleration.x >= threshold { return .degrees(-90) }   // landscapeLeft
+        if acceleration.x <= -threshold { return .degrees(90) }  // landscapeRight
+        if acceleration.y >= threshold { return .degrees(180) }  // portraitUpsideDown
+        if acceleration.y <= -threshold { return .degrees(0) }   // portrait
         return iconRotationAngle
     }
 }

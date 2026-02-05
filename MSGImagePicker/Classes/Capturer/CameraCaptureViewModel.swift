@@ -203,13 +203,14 @@ final class CameraCaptureViewModel: ObservableObject {
     
     // MARK: - Actions
     
-    /// Captures a photo.
-    func capturePhoto() {
+    /// Captures a photo. Orientation is used for EXIF metadata only (no pixel rotation).
+    /// - Parameter orientation: Physical device orientation at capture time.
+    func capturePhoto(orientation: AVCaptureVideoOrientation? = nil) {
         guard !isCapturing && !isRecording else { return }
         
         isCapturing = true
         
-        cameraService.capturePhoto { [weak self] result in
+        cameraService.capturePhoto(orientation: orientation) { [weak self] result in
             guard let self = self else { return }
             
             self.isCapturing = false
@@ -225,12 +226,13 @@ final class CameraCaptureViewModel: ObservableObject {
         }
     }
     
-    /// Starts video recording.
-    func startVideoRecording() {
+    /// Starts video recording. Orientation is fixed at start (metadata only, no pixel rotation).
+    /// - Parameter orientation: Physical device orientation at start of recording.
+    func startVideoRecording(orientation: AVCaptureVideoOrientation? = nil) {
         guard !isRecording && !isCapturing else { return }
         guard config.allowsVideo else { return }
         
-        cameraService.startRecording()
+        cameraService.startRecording(orientation: orientation)
         startRecordingTimer()
     }
     
@@ -258,11 +260,12 @@ final class CameraCaptureViewModel: ObservableObject {
     }
     
     /// Toggles video recording (start if stopped, stop if recording).
-    func toggleVideoRecording() {
+    /// - Parameter orientation: Physical device orientation at start of recording (used when starting).
+    func toggleVideoRecording(orientation: AVCaptureVideoOrientation? = nil) {
         if isRecording {
             stopVideoRecording()
         } else {
-            startVideoRecording()
+            startVideoRecording(orientation: orientation)
         }
     }
     

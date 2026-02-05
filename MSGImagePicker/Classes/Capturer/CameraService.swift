@@ -6,6 +6,8 @@
 //
 
 import AVFoundation
+import ImageIO
+import MobileCoreServices
 import UIKit
 import Combine
 
@@ -97,6 +99,8 @@ final class CameraService: NSObject, ObservableObject {
     
     private var photoCompletion: ((Result<UIImage, Error>) -> Void)?
     private var videoCompletion: ((Result<URL, Error>) -> Void)?
+    /// Physical orientation at photo capture (for EXIF metadata only).
+    private var photoCaptureOrientation: AVCaptureVideoOrientation = .portrait
     
     private var minZoomFactor: CGFloat = 1.0
     private var maxZoomFactor: CGFloat = 1.0
@@ -303,18 +307,26 @@ final class CameraService: NSObject, ObservableObject {
     
     // MARK: - Photo Capture
     
-    /// Captures a photo.
-    /// - Parameter completion: Completion handler with the captured image or error.
-    func capturePhoto(completion: @escaping (Result<UIImage, Error>) -> Void) {
+    /// Captures a photo. Orientation is used for EXIF metadata only (no pixel rotation).
+    /// - Parameters:
+    ///   - orientation: Physical device orientation at capture time.
+    ///   - completion: Completion handler with the captured image or error.
+    func capturePhoto(orientation: AVCaptureVideoOrientation? = nil, completion: @escaping (Result<UIImage, Error>) -> Void) {
         guard !isRecording else {
             completion(.failure(MSGMediaCapturerError.captureFailed(underlying: nil)))
             return
         }
         
+        photoCaptureOrientation = orientation ?? .portrait
         photoCompletion = completion
         
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
+            
+            // Set connection orientation before capture so EXIF is written by the system (like Mijick Camera).
+            if let connection = self.photoOutput.connection(with: .video), connection.isVideoOrientationSupported {
+                connection.videoOrientation = self.photoCaptureOrientation
+            }
             
             let settings = AVCapturePhotoSettings()
             
@@ -329,12 +341,20 @@ final class CameraService: NSObject, ObservableObject {
     
     // MARK: - Video Recording
     
-    /// Starts video recording.
-    func startRecording() {
+    /// Starts video recording. Orientation is fixed at start (metadata only, no pixel rotation).
+    /// - Parameter orientation: Physical device orientation at start of recording.
+    func startRecording(orientation: AVCaptureVideoOrientation? = nil) {
         guard !isRecording else { return }
+        
+        let videoOrientation = orientation ?? .portrait
         
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
+            
+            // Set video orientation metadata (applies to written track, not pixel rotation)
+            if let connection = self.movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
+                connection.videoOrientation = videoOrientation
+            }
             
             // Set torch mode for video
             if let device = self.videoDeviceInput?.device,
@@ -424,8 +444,24 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
             return
         }
         
-        guard let imageData = photo.fileDataRepresentation(),
-              let image = UIImage(data: imageData) else {
+        guard let imageData = photo.fileDataRepresentation() else {
+            DispatchQueue.main.async { [weak self] in
+                self?.photoCompletion?(.failure(MSGMediaCapturerError.captureFailed(underlying: nil)))
+                self?.photoCompletion = nil
+            }
+            return
+        }
+        
+        // Rewrite image with EXIF orientation (metadata only, no pixel rotation)
+        let orientation = photoCaptureOrientation
+        let dataWithOrientation: Data
+        if let rewritten = Self.jpegDataWithOrientationMetadata(imageData, captureOrientation: orientation) {
+            dataWithOrientation = rewritten
+        } else {
+            dataWithOrientation = imageData
+        }
+        
+        guard let image = UIImage(data: dataWithOrientation) else {
             DispatchQueue.main.async { [weak self] in
                 self?.photoCompletion?(.failure(MSGMediaCapturerError.captureFailed(underlying: nil)))
                 self?.photoCompletion = nil
@@ -444,6 +480,34 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.photoCompletion?(.success(finalImage))
             self?.photoCompletion = nil
+        }
+    }
+    
+    /// Rewrites JPEG data with EXIF orientation metadata (no pixel rotation).
+    private static func jpegDataWithOrientationMetadata(_ imageData: Data, captureOrientation: AVCaptureVideoOrientation) -> Data? {
+        let exifOrientation = exifOrientationValue(for: captureOrientation)
+        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        
+        let orientationKey = kCGImagePropertyOrientation as String
+        var metadata = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]) ?? [:]
+        metadata[orientationKey] = exifOrientation
+        
+        let mutableData = CFDataCreateMutable(nil, 0)!
+        guard let destination = CGImageDestinationCreateWithData(mutableData, kUTTypeJPEG, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, cgImage, metadata as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return mutableData as Data
+    }
+    
+    /// Maps AVCaptureVideoOrientation to EXIF orientation value (1–8).
+    private static func exifOrientationValue(for orientation: AVCaptureVideoOrientation) -> Int {
+        switch orientation {
+        case .portrait: return 1
+        case .portraitUpsideDown: return 3
+        case .landscapeRight: return 8
+        case .landscapeLeft: return 6
+        @unknown default: return 1
         }
     }
 }

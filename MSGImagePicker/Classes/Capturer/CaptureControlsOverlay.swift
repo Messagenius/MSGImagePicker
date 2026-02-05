@@ -198,18 +198,19 @@ struct CaptureControlsOverlay: View {
     // MARK: - Shutter Actions
     
     private func handleShutterTap() {
+        let orientation = orientationManager.captureVideoOrientation
         switch viewModel.captureMode {
         case .photo:
-            viewModel.capturePhoto()
+            viewModel.capturePhoto(orientation: orientation)
         case .video:
-            viewModel.toggleVideoRecording()
+            viewModel.toggleVideoRecording(orientation: orientation)
         }
     }
     
     private func handleLongPressStart() {
-        // In photo mode, holding starts video recording
+        // In photo mode, holding starts video recording (orientation fixed at start)
         if viewModel.captureMode == .photo && viewModel.config.allowsVideo {
-            viewModel.startVideoRecording()
+            viewModel.startVideoRecording(orientation: orientationManager.captureVideoOrientation)
         }
     }
     
