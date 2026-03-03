@@ -27,6 +27,7 @@ struct MediaPickerView: View {
             if !viewModel.selectedItems.isEmpty {
                 ActionBarView(
                     showsCaptions: config.showsCaptions,
+                    isSingleSelection: config.isSingleSelection,
                     onEdit: { showEditView = true },
                     onSend: handleSend
                 )
@@ -42,7 +43,7 @@ struct MediaPickerView: View {
             }
             
             ToolbarItem(placement: .primaryAction) {
-                if !viewModel.selectedItems.isEmpty {
+                if !config.isSingleSelection && !viewModel.selectedItems.isEmpty {
                     Text("\(viewModel.selectedItems.count)/\(config.maxSelection)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)

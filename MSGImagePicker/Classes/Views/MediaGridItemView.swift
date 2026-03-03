@@ -34,8 +34,8 @@ struct MediaGridItemView: View {
                     videoDurationOverlay
                 }
                 
-                // Selection badge
-                if let order = selectionOrder {
+                // Selection badge (hidden in single-selection mode)
+                if !viewModel.config.isSingleSelection, let order = selectionOrder {
                     selectionBadge(order: order)
                 }
                 

@@ -36,7 +36,7 @@ final class MediaPickerViewModel: ObservableObject {
     
     // MARK: - Private Properties
     
-    private let config: MSGImagePickerConfig
+    let config: MSGImagePickerConfig
     private var fetchResult: PHFetchResult<PHAsset>?
     private let imageManager = PHCachingImageManager()
     

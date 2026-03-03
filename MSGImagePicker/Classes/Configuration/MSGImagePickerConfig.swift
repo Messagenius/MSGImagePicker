@@ -56,6 +56,11 @@ public struct MSGImagePickerConfig {
         self.editHandler = editHandler
     }
     
+    /// Whether the picker is in single-selection mode.
+    var isSingleSelection: Bool {
+        maxSelection == 1
+    }
+
     /// The media types to fetch based on current configuration.
     var mediaTypes: [PHAssetMediaType] {
         var types: [PHAssetMediaType] = []

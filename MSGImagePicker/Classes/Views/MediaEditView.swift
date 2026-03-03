@@ -264,9 +264,10 @@ public struct MediaEditView: View {
     
     // MARK: - Bottom Controls
     
-    /// Whether to show the preview strip (hidden when only one item and additions not allowed)
+    /// Whether to show the preview strip (hidden in single-selection mode or when only one item and additions not allowed)
     private var shouldShowPreviewStrip: Bool {
-        allowsMediaAddition || viewModel.mediaCount > 1
+        guard !config.isSingleSelection else { return false }
+        return allowsMediaAddition || viewModel.mediaCount > 1
     }
     
     private var bottomControls: some View {
@@ -281,7 +282,9 @@ public struct MediaEditView: View {
             }
             
             // Caption field
-            captionField
+            if config.showsCaptions {
+                captionField
+            }
             
             // Send bar
             sendBar

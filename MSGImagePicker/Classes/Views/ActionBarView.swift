@@ -12,6 +12,7 @@ struct ActionBarView: View {
     @EnvironmentObject private var viewModel: MediaPickerViewModel
     
     let showsCaptions: Bool
+    let isSingleSelection: Bool
     let onEdit: () -> Void
     let onSend: () -> Void
     
@@ -24,18 +25,20 @@ struct ActionBarView: View {
         HStack(alignment: .bottom, spacing: 12) {
             // Edit button
             editButton
-            
-            // Caption text field
+
+            // Caption text field or spacer for single selection
             if showsCaptions {
                 captionField
+            } else {
+                Spacer()
             }
-            
+
             // Send button
             sendButton
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
-        .background(.regularMaterial)
+        .background(showsCaptions ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.clear))
     }
     
     // MARK: - Subviews
@@ -68,11 +71,13 @@ struct ActionBarView: View {
     private var sendButton: some View {
         Button(action: onSend) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32, weight: .semibold))
-                    .foregroundStyle(.white, .blue)
-                
-                if !viewModel.selectedItems.isEmpty {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: buttonSize, height: buttonSize)
+                    .background(Circle().fill(Color.blue))
+
+                if !isSingleSelection && !viewModel.selectedItems.isEmpty {
                     Text("\(viewModel.selectedItems.count)")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.white)
@@ -97,6 +102,7 @@ struct ActionBarView_Previews: PreviewProvider {
             Spacer()
             ActionBarView(
                 showsCaptions: true,
+                isSingleSelection: false,
                 onEdit: {},
                 onSend: {}
             )
